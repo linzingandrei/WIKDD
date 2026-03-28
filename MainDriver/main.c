@@ -177,6 +177,18 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_TEST_TPOOL: {
 		DbgPrintEx(0, 0, "The test threadpool IOCTL was called\n");
 
+		if (devExt->ctx.Number != 0)
+		{
+			TpUninit(&devExt->tp);
+			devExt->ctx.Number = 0;
+		}
+
+		status = TpInit(&devExt->tp, 5);
+		if (!NT_SUCCESS(status))
+		{
+			goto cleanup;
+		}
+
 		for (int i = 0; i < 100000; ++i)
 		{
 			status = TpEnqueueWorkItem(&devExt->tp, TestThreadPoolRoutine, &devExt->ctx);
@@ -189,6 +201,14 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 			{
 				DbgPrintEx(0, 0, "Value: %d\n", devExt->ctx.Number);
 			}
+		}
+
+		TpUninit(&devExt->tp);
+
+		DbgPrintEx(0, 0, "Value: %d\n", devExt->ctx.Number);
+
+		if (devExt->ctx.Number != 100000000) {
+			DbgPrintEx(0, 0, "Result is not as expected!\n");
 		}
 
 		break;
