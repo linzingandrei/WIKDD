@@ -14,9 +14,9 @@ TestThreadPoolRoutine(
 
     for (UINT32 i = 0; i < 1000; ++i)
     {
-        AcquireSRWLockExclusive(&ctx->ContextLock);
+        KeAcquireSpinLock(&ctx->ContextLock, &ctx->oldIrql);
         ctx->Number++;
-        ReleaseSRWLockExclusive(&ctx->ContextLock);
+        KeReleaseSpinLock(&ctx->ContextLock, &ctx->oldIrql);
     }
 
     return STATUS_SUCCESS;

@@ -2,10 +2,12 @@
 
 #include "Windows.h"
 #include "ntstatus.h"
+#include "ntifs.h"
 
 typedef struct _MY_CONTEXT
 {
-    SRWLOCK ContextLock;
+    PKSPIN_LOCK ContextLock;
+    KIRQL oldIrql;
     UINT32 Number;
 } MY_CONTEXT;
 

@@ -117,7 +117,7 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 			return status;
 		}
 
-		InitializeSRWLock(&ctx.ContextLock);
+		KeInitializeSpinLock(&ctx.ContextLock);
 		ctx.Number = 0;
 
 		break;
