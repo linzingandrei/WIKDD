@@ -52,7 +52,7 @@ TpWorkerThread(
 }
 
 VOID
-TpUninitialize(
+TpUninit(
     _Pre_valid_ _Post_invalid_ PMY_THREAD_POOL ThreadPool
 )
 {
@@ -118,7 +118,7 @@ TpInit(
 
         if (!NT_SUCCESS(status))
         {
-            TpUninitialize(ThreadPool);
+            TpUninit(ThreadPool);
             return status;
         }
         else
@@ -137,9 +137,8 @@ TpEnqueueWorkItem(
     _Inout_opt_ PVOID    Context
 )
 {
-    MY_WORK_ITEM* workItem = ExAllocatePool2(POOL_FLAG_NON_PAGED,
-        sizeof(MY_WORK_ITEM),
-        'KMSD');
+    MY_WORK_ITEM* workItem = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(MY_WORK_ITEM), 'KMSD');
+
     if (!workItem)
     {
         return STATUS_INSUFFICIENT_RESOURCES;

@@ -29,7 +29,7 @@ TpWorkerThread(
 );
 
 VOID
-TpUninitialize(
+TpUninit(
     _Pre_valid_ _Post_invalid_ PMY_THREAD_POOL ThreadPool
 );
 

@@ -1,7 +1,7 @@
 #include "threadpool_test.h"
 
 
-DWORD WINAPI
+NTSTATUS
 TestThreadPoolRoutine(
     _In_opt_ PVOID Context
 )
@@ -14,9 +14,10 @@ TestThreadPoolRoutine(
 
     for (UINT32 i = 0; i < 1000; ++i)
     {
-        KeAcquireSpinLock(&ctx->ContextLock, &ctx->oldIrql);
+        KIRQL oldIrql;
+        KeAcquireSpinLock(&ctx->ContextLock, &oldIrql);
         ctx->Number++;
-        KeReleaseSpinLock(&ctx->ContextLock, &ctx->oldIrql);
+        KeReleaseSpinLock(&ctx->ContextLock, oldIrql);
     }
 
     return STATUS_SUCCESS;

@@ -19,8 +19,25 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="MainDriver.inf">
+    <ClCompile Include="threadpool.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="threadpool_test.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="threadpool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="threadpool_test.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="main.h">
       <Filter>Driver Files</Filter>
-    </Inf>
+    </ClInclude>
   </ItemGroup>
 </Project>

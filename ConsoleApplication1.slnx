@@ -12,5 +12,9 @@
     <Platform Project="x64" />
     <Deploy />
   </Project>
+  <Project Path="MainDriver/MainDriver.vcxproj">
+    <Platform Project="x64" />
+    <Deploy />
+  </Project>
   <Project Path="UnitTest1/UnitTest1.vcxproj" />
 </Solution>

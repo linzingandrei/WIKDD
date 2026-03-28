@@ -15,7 +15,7 @@
 #include <tchar.h>
 #include <winioctl.h>
 
-#include "../DriverFirst/MyDriver.h"
+#include "../MainDriver/main.h"
 
 #include "Trace.h"
 //#include "x64/Debug/ConsoleApplication1.tmh"
@@ -568,7 +568,7 @@ int Error(const char* message) {
 }
 
 INT
-TestReadFile()
+DriverThreadPoolInit()
 {
     HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
         GENERIC_READ | GENERIC_WRITE,
@@ -585,7 +585,7 @@ TestReadFile()
     DWORD returned;
     BOOL success = DeviceIoControl(
         hDevice,
-        IOCTL_MY_DRIVER_READ,
+        IOCTL_DRIVER_INIT_TPOOL,
         NULL, 0,
         nullptr, 0,
         &returned, nullptr
@@ -602,7 +602,7 @@ TestReadFile()
 }
 
 INT
-TestWriteFile()
+DriverThreadPoolProcess()
 {
     HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
         GENERIC_READ | GENERIC_WRITE,
@@ -619,7 +619,7 @@ TestWriteFile()
     DWORD returned;
     BOOL success = DeviceIoControl(
         hDevice,
-        IOCTL_MY_DRIVER_WRITE,
+        IOCTL_DRIVER_PROCESS_TPOOL,
         NULL, 0,
         nullptr, 0,
         &returned, nullptr
@@ -636,7 +636,7 @@ TestWriteFile()
 }
 
 INT
-TestForward()
+DriverThreadPoolUninit()
 {
     HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
         GENERIC_READ | GENERIC_WRITE,
@@ -653,7 +653,7 @@ TestForward()
     DWORD returned;
     BOOL success = DeviceIoControl(
         hDevice,
-        IOCTL_MY_DRIVER_FORWARD,
+        IOCTL_DRIVER_UNINIT_TPOOL,
         NULL, 0,
         nullptr, 0,
         &returned, nullptr
@@ -701,21 +701,21 @@ int main()
 
         if (strncmp(userInput, "testreadfile", 12) == 0 || strncmp(userInput, "trf", 3) == 0)
         {
-            TestReadFile();
+            DriverThreadPoolInit();
 
             userInput[0] = '\0';
         }
 
         if (strncmp(userInput, "testwritefile", 13) == 0 || strncmp(userInput, "twf", 3) == 0)
         {
-            TestWriteFile();
+            DriverThreadPoolProcess();
 
             userInput[0] = '\0';
         }
 
         if (strncmp(userInput, "testforward", 11) == 0 || strncmp(userInput, "tf", 2) == 0)
         {
-            TestForward();
+            DriverThreadPoolUninit();
 
             userInput[0] = '\0';
         }
