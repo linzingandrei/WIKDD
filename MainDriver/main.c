@@ -97,6 +97,8 @@ NTSTATUS MyCompletionRoutine(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _I
 	return STATUS_CONTINUE_COMPLETION;
 }
 
+BOOLEAN hasBeenInitialized = FALSE;
+
 _Use_decl_annotations_
 NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 {
@@ -113,6 +115,8 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	{
 	case IOCTL_DRIVER_INIT_TPOOL: {
 		DbgPrintEx(0, 0, "The initialize threadpool IOCTL was called\n");
+
+		hasBeenInitialized = TRUE;
 
 		RtlZeroMemory(&devExt->tp, sizeof(devExt->tp));
 		RtlZeroMemory(&devExt->ctx, sizeof(devExt->ctx));
@@ -137,6 +141,12 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 
 	case IOCTL_DRIVER_PROCESS_TPOOL: {
 		DbgPrintEx(0, 0, "The process threadpool IOCTL was called\n");
+
+		if (!hasBeenInitialized)
+		{
+			DbgPrintEx(0, 0, "Initialize the threadpool first!\n");
+			break;
+		}
 
 		for (int i = 0; i < 10; ++i)
 		{
@@ -164,8 +174,20 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_UNINIT_TPOOL: {
 		DbgPrintEx(0, 0, "The uninitialize threadpool IOCTL was called\n");
 
+		if (!hasBeenInitialized)
+		{
+			DbgPrintEx(0, 0, "Initialize the threadpool first!\n");
+			break;
+		}
+
+		hasBeenInitialized = FALSE;
+
 		cleanup:
-			TpUninit(&devExt->tp);
+			//DbgPrintEx(0, 0, "Tp: %d", &devExt->tp);
+			if (&devExt->tp.ListHead)
+			{
+				TpUninit(&devExt->tp);
+			}
 			DbgPrintEx(0, 0, "Status: %d", status);
 
 		/* If everything went well, this should output 100000000. */
@@ -179,7 +201,6 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 
 		if (devExt->ctx.Number != 0)
 		{
-			TpUninit(&devExt->tp);
 			devExt->ctx.Number = 0;
 		}
 
