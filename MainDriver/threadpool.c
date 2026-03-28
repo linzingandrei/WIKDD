@@ -75,11 +75,15 @@ TpUninit(
 
     while (!IsListEmpty(&ThreadPool->ListHead))
     {
+        KeWaitForSingleObject(&ThreadPool->ListMutex, Executive, KernelMode, FALSE, NULL);
+
         LIST_ENTRY* entry = RemoveHeadList(&ThreadPool->ListHead);
         MY_WORK_ITEM* workItem = CONTAINING_RECORD(entry, MY_WORK_ITEM, ListEntry);
 
         workItem->Routine(workItem->Context);
         ExFreePoolWithTag(workItem, 'KMSD');
+
+        KeReleaseMutex(&ThreadPool->ListMutex, FALSE);
     }
 }
 
