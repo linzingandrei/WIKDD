@@ -17,6 +17,8 @@ typedef struct {
 
 	MY_THREAD_POOL tp;
 	MY_CONTEXT ctx;
+
+	int numberOfThreadPools;
 }*PDEVICE_EXTENSION, DEVICE_EXTENSION;
 
 NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath)
@@ -115,9 +117,9 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 		RtlZeroMemory(&devExt->tp, sizeof(devExt->tp));
 		RtlZeroMemory(&devExt->ctx, sizeof(devExt->ctx));
 
-		int value = *(int*)Irp->AssociatedIrp.SystemBuffer;
+		devExt->numberOfThreadPools = *(int*)Irp->AssociatedIrp.SystemBuffer;
 
-		status = TpInit(&devExt->tp, value);
+		status = TpInit(&devExt->tp, devExt->numberOfThreadPools);
 		if (!NT_SUCCESS(status))
 		{
 			goto cleanup;
@@ -136,14 +138,25 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_PROCESS_TPOOL: {
 		DbgPrintEx(0, 0, "The process threadpool IOCTL was called\n");
 
-		for (int i = 0; i < 100000; ++i)
+		for (int i = 0; i < 10; ++i)
 		{
-			status = TpEnqueueWorkItem(&devExt->tp, TestThreadPoolRoutine, &devExt->ctx);
+			DbgPrintEx(0, 0, "Hi %d!\n", devExt->ctx.Number);
+
+			int nr = 1000000;
+			while (nr > 0)
+			{
+				nr -= 1;
+			}
+
+			status = TpEnqueueWorkItem(&devExt->tp, SimpleTPProcess, &devExt->ctx);
 			if (!NT_SUCCESS(status))
 			{
 				goto cleanup;
 			}
+
+			//DbgPrintEx(0, 0, "Hi %d!\n", devExt->ctx.Number);
 		}
+		DbgPrintEx(0, 0, "Hi %d!\n", devExt->ctx.Number);
 
 		break;
 	}
@@ -157,6 +170,26 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 
 		/* If everything went well, this should output 100000000. */
 		DbgPrintEx(0, 0, "Final number value = %d \r\n", devExt->ctx.Number);
+
+		break;
+	}
+
+	case IOCTL_DRIVER_TEST_TPOOL: {
+		DbgPrintEx(0, 0, "The test threadpool IOCTL was called\n");
+
+		for (int i = 0; i < 100000; ++i)
+		{
+			status = TpEnqueueWorkItem(&devExt->tp, TestThreadPoolRoutine, &devExt->ctx);
+			if (!NT_SUCCESS(status))
+			{
+				goto cleanup;
+			}
+
+			if (i % 50000 == 0)
+			{
+				DbgPrintEx(0, 0, "Value: %d\n", devExt->ctx.Number);
+			}
+		}
 
 		break;
 	}

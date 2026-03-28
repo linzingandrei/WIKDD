@@ -9,6 +9,8 @@ TpWorkerThread(
     _In_ PVOID StartContext
 )
 {
+    //__debugbreak();
+
     PMY_THREAD_POOL threadPool = (PMY_THREAD_POOL)(StartContext);
     PVOID objects[2] = { &threadPool->StopThreadPool, &threadPool->WorkScheduled };
 
@@ -32,7 +34,8 @@ TpWorkerThread(
 
         while (shouldWork)
         {
-            KeWaitForSingleObject(&threadPool->ListMutex, Executive, KernelMode, FALSE, NULL);
+            KIRQL oldIrql;
+            KeAcquireSpinLock(&threadPool->PoolLock, &oldIrql);
 
             if (!IsListEmpty(&threadPool->ListHead))
             {
@@ -46,7 +49,8 @@ TpWorkerThread(
             {
                 shouldWork = FALSE;
             }
-            KeReleaseMutex(&threadPool->ListMutex, FALSE);
+
+            KeReleaseSpinLock(&threadPool->PoolLock, oldIrql);
         }
     }
 }
@@ -75,7 +79,8 @@ TpUninit(
 
     while (!IsListEmpty(&ThreadPool->ListHead))
     {
-        KeWaitForSingleObject(&ThreadPool->ListMutex, Executive, KernelMode, FALSE, NULL);
+        KIRQL oldIrql;
+        KeAcquireSpinLock(&ThreadPool->PoolLock, &oldIrql);
 
         LIST_ENTRY* entry = RemoveHeadList(&ThreadPool->ListHead);
         MY_WORK_ITEM* workItem = CONTAINING_RECORD(entry, MY_WORK_ITEM, ListEntry);
@@ -83,7 +88,7 @@ TpUninit(
         workItem->Routine(workItem->Context);
         ExFreePoolWithTag(workItem, 'KMSD');
 
-        KeReleaseMutex(&ThreadPool->ListMutex, FALSE);
+        KeReleaseSpinLock(&ThreadPool->PoolLock, oldIrql);
     }
 }
 
@@ -150,9 +155,10 @@ TpEnqueueWorkItem(
     workItem->Routine = StartRoutine;
     workItem->Context = Context;
 
-    KeWaitForSingleObject(&ThreadPool->ListMutex, Executive, KernelMode, FALSE, NULL);
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&ThreadPool->PoolLock, &oldIrql);
     InsertHeadList(&ThreadPool->ListHead, &workItem->ListEntry);
-    KeReleaseMutex(&ThreadPool->ListMutex, FALSE);
+    KeReleaseSpinLock(&ThreadPool->PoolLock, oldIrql);
 
     KeSetEvent(&ThreadPool->WorkScheduled, 0, FALSE);
 

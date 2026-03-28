@@ -11,6 +11,7 @@ typedef struct _MY_THREAD_POOL
     HANDLE* ThreadHandles;
     KMUTEX     ListMutex;
     LIST_ENTRY ListHead;
+    KSPIN_LOCK PoolLock;
 }MY_THREAD_POOL, * PMY_THREAD_POOL;
 
 

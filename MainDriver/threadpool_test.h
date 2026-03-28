@@ -13,3 +13,8 @@ NTSTATUS
 TestThreadPoolRoutine(
     _In_opt_ PVOID Context
 );
+
+NTSTATUS
+SimpleTPProcess(
+    _In_opt_ PVOID Context
+);

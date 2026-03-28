@@ -18,6 +18,7 @@
 #include "../MainDriver/main.h"
 
 #include "Trace.h"
+#include <stdlib.h>
 //#include "x64/Debug/ConsoleApplication1.tmh"
 
 //
@@ -636,6 +637,40 @@ DriverThreadPoolProcess()
 }
 
 INT
+DriverThreadPoolTest()
+{
+    HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        return Error("Failed to open device");
+    }
+
+    DWORD returned;
+    BOOL success = DeviceIoControl(
+        hDevice,
+        IOCTL_DRIVER_TEST_TPOOL,
+        NULL, 0,
+        nullptr, 0,
+        &returned, nullptr
+    );
+    if (success)
+    {
+        printf("Threadpool test request successfully sent to the driver!\n");
+        return 0;
+    }
+    else
+    {
+        return Error("!(Threadpool test request successfully sent to the driver!)");
+    }
+}
+
+INT
 DriverThreadPoolUninit()
 {
     HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
@@ -731,6 +766,13 @@ int main()
         if (strncmp(userInput, "proctp", 6) == 0 || strncmp(userInput, "ptp", 3) == 0)
         {
             DriverThreadPoolProcess();
+
+            userInput[0] = '\0';
+        }
+
+        if (strncmp(userInput, "testp", 5) == 0 || strncmp(userInput, "ttp", 3) == 0)
+        {
+            DriverThreadPoolTest();
 
             userInput[0] = '\0';
         }
