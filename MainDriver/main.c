@@ -115,10 +115,12 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 		RtlZeroMemory(&devExt->tp, sizeof(devExt->tp));
 		RtlZeroMemory(&devExt->ctx, sizeof(devExt->ctx));
 
-		status = TpInit(&devExt->tp, 5);
+		int value = *(int*)Irp->AssociatedIrp.SystemBuffer;
+
+		status = TpInit(&devExt->tp, value);
 		if (!NT_SUCCESS(status))
 		{
-			return status;
+			goto cleanup;
 		}
 
 		DbgPrintEx(0, 0, "Status = 0x%X\n", status);
@@ -134,12 +136,12 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_PROCESS_TPOOL: {
 		DbgPrintEx(0, 0, "The process threadpool IOCTL was called\n");
 
-		for (int i = 0; i < 10; ++i)
+		for (int i = 0; i < 100000; ++i)
 		{
 			status = TpEnqueueWorkItem(&devExt->tp, TestThreadPoolRoutine, &devExt->ctx);
 			if (!NT_SUCCESS(status))
 			{
-				return status;
+				goto cleanup;
 			}
 		}
 
@@ -149,7 +151,9 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_UNINIT_TPOOL: {
 		DbgPrintEx(0, 0, "The uninitialize threadpool IOCTL was called\n");
 
-		TpUninit(&devExt->tp);
+		cleanup:
+			TpUninit(&devExt->tp);
+			DbgPrintEx(0, 0, "Status: %d", status);
 
 		/* If everything went well, this should output 100000000. */
 		DbgPrintEx(0, 0, "Final number value = %d \r\n", devExt->ctx.Number);

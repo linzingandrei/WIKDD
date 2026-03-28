@@ -568,7 +568,7 @@ int Error(const char* message) {
 }
 
 INT
-DriverThreadPoolInit()
+DriverThreadPoolInit(int numberOfThreads)
 {
     HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
         GENERIC_READ | GENERIC_WRITE,
@@ -586,18 +586,18 @@ DriverThreadPoolInit()
     BOOL success = DeviceIoControl(
         hDevice,
         IOCTL_DRIVER_INIT_TPOOL,
-        NULL, 0,
+        &numberOfThreads, sizeof(numberOfThreads),
         nullptr, 0,
         &returned, nullptr
     );
     if (success)
     {
-        printf("Read successfully sent!\n");
+        printf("Threadpool init request successfully sent to the driver!\n");
         return 0;
     }
     else
     {
-        return Error("!(Read successfully sent!)");
+        return Error("!(Threadpool init request successfully sent to the driver!)");
     }
 }
 
@@ -626,12 +626,12 @@ DriverThreadPoolProcess()
     );
     if (success)
     {
-        printf("Write successfully sent!\n");
+        printf("Threadpool process request successfully sent to the driver!\n");
         return 0;
     }
     else
     {
-        return Error("!(Write successfully sent!)");
+        return Error("!(Threadpool process request successfully sent to the driver!)");
     }
 }
 
@@ -660,12 +660,12 @@ DriverThreadPoolUninit()
     );
     if (success)
     {
-        printf("Forward successfully sent!\n");
+        printf("Threadpool uninit request successfully sent to the driver!\n");
         return 0;
     }
     else
     {
-        return Error("!(Forward successfully sent!)");
+        return Error("!(Threadpool uninit request successfully sent to the driver!)");
     }
 }
 
@@ -681,7 +681,8 @@ int main()
 
     while (true) {
         printf("> ");
-        scanf_s("%s", userInput, (unsigned)sizeof(userInput));
+    start_while:
+        fgets(userInput, 255, stdin);
 
         if (strncmp(userInput, "start", 5) == 0)
         {
@@ -699,21 +700,42 @@ int main()
             userInput[0] = '\0';
         }
 
-        if (strncmp(userInput, "testreadfile", 12) == 0 || strncmp(userInput, "trf", 3) == 0)
+        if (strncmp(userInput, "initp", 5) == 0 || strncmp(userInput, "itp", 3) == 0)
         {
-            DriverThreadPoolInit();
+            char* p = strchr(userInput, ' ');
+
+            if (p == NULL) {
+                Error("No space(s) in user input!");
+
+                userInput[0] = '\0';
+                goto start_while;
+            }
+
+            p += 1;
+            int numberOfThreads = atoi(p);
+
+            //printf("%d\n", numberOfThreads);
+
+            if (numberOfThreads > 10000 || numberOfThreads <= 0) {
+                Error("Choose another value for number of threads");
+
+                userInput[0] = '\0';
+                goto start_while;
+            }
+
+            DriverThreadPoolInit(numberOfThreads);
 
             userInput[0] = '\0';
         }
 
-        if (strncmp(userInput, "testwritefile", 13) == 0 || strncmp(userInput, "twf", 3) == 0)
+        if (strncmp(userInput, "proctp", 6) == 0 || strncmp(userInput, "ptp", 3) == 0)
         {
             DriverThreadPoolProcess();
 
             userInput[0] = '\0';
         }
 
-        if (strncmp(userInput, "testforward", 11) == 0 || strncmp(userInput, "tf", 2) == 0)
+        if (strncmp(userInput, "uninitp", 7) == 0 || strncmp(userInput, "utp", 3) == 0)
         {
             DriverThreadPoolUninit();
 
