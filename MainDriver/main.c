@@ -14,6 +14,9 @@ NTSTATUS MyCompletionRoutine(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _I
 typedef struct {
 	PDEVICE_OBJECT LowerDeviceObject;
 	PFILE_OBJECT FileObject;
+
+	MY_THREAD_POOL tp;
+	MY_CONTEXT ctx;
 }*PDEVICE_EXTENSION, DEVICE_EXTENSION;
 
 NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath)
@@ -102,15 +105,17 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	MY_THREAD_POOL tp = { 0 };
-	MY_CONTEXT ctx = { 0 };
+	PDEVICE_EXTENSION devExt = (PDEVICE_EXTENSION)(DeviceObject->DeviceExtension);
 
 	switch (stack->Parameters.DeviceIoControl.IoControlCode)
 	{
 	case IOCTL_DRIVER_INIT_TPOOL: {
 		DbgPrintEx(0, 0, "The initialize threadpool IOCTL was called\n");
 
-		status = TpInit(&tp, 5);
+		RtlZeroMemory(&devExt->tp, sizeof(devExt->tp));
+		RtlZeroMemory(&devExt->ctx, sizeof(devExt->ctx));
+
+		status = TpInit(&devExt->tp, 5);
 		if (!NT_SUCCESS(status))
 		{
 			return status;
@@ -118,24 +123,10 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 
 		DbgPrintEx(0, 0, "Status = 0x%X\n", status);
 
-		KeInitializeSpinLock(&ctx.ContextLock);
-		ctx.Number = 0;
+		KeInitializeSpinLock(&devExt->ctx.ContextLock);
+		devExt->ctx.Number = 0;
 
-		DbgPrintEx(0, 0, "IOCTL = 0x%X\n", stack->Parameters.DeviceIoControl.IoControlCode);
-
-		for (int i = 0; i < 10; ++i)
-		{
-			status = TpEnqueueWorkItem(&tp, TestThreadPoolRoutine, &ctx);
-			if (!NT_SUCCESS(status))
-			{
-				return status;
-			}
-		}
-
-		TpUninit(&tp);
-
-		/* If everything went well, this should output 100000000. */
-		DbgPrintEx(0, 0, "Final number value = %d \r\n", ctx.Number);
+		//DbgPrintEx(0, 0, "IOCTL = 0x%X\n", stack->Parameters.DeviceIoControl.IoControlCode);
 
 		break;
 	}
@@ -143,7 +134,14 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_PROCESS_TPOOL: {
 		DbgPrintEx(0, 0, "The process threadpool IOCTL was called\n");
 
-		
+		for (int i = 0; i < 10; ++i)
+		{
+			status = TpEnqueueWorkItem(&devExt->tp, TestThreadPoolRoutine, &devExt->ctx);
+			if (!NT_SUCCESS(status))
+			{
+				return status;
+			}
+		}
 
 		break;
 	}
@@ -151,7 +149,10 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 	case IOCTL_DRIVER_UNINIT_TPOOL: {
 		DbgPrintEx(0, 0, "The uninitialize threadpool IOCTL was called\n");
 
-		
+		TpUninit(&devExt->tp);
+
+		/* If everything went well, this should output 100000000. */
+		DbgPrintEx(0, 0, "Final number value = %d \r\n", devExt->ctx.Number);
 
 		break;
 	}
