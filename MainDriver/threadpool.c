@@ -40,6 +40,8 @@ TpWorkerThread(
             if (!IsListEmpty(&threadPool->ListHead))
             {
                 LIST_ENTRY* entry = RemoveTailList(&threadPool->ListHead);
+                KeReleaseSpinLock(&threadPool->PoolLock, oldIrql);
+
                 MY_WORK_ITEM* workItem = CONTAINING_RECORD(entry, MY_WORK_ITEM, ListEntry);
 
                 workItem->Routine(workItem->Context);
@@ -47,10 +49,9 @@ TpWorkerThread(
             }
             else
             {
+                KeReleaseSpinLock(&threadPool->PoolLock, oldIrql);
                 shouldWork = FALSE;
             }
-
-            KeReleaseSpinLock(&threadPool->PoolLock, oldIrql);
         }
     }
 }
@@ -81,14 +82,13 @@ TpUninit(
     {
         KIRQL oldIrql;
         KeAcquireSpinLock(&ThreadPool->PoolLock, &oldIrql);
-
         LIST_ENTRY* entry = RemoveHeadList(&ThreadPool->ListHead);
+        KeReleaseSpinLock(&ThreadPool->PoolLock, oldIrql);
+
         MY_WORK_ITEM* workItem = CONTAINING_RECORD(entry, MY_WORK_ITEM, ListEntry);
 
         workItem->Routine(workItem->Context);
         ExFreePoolWithTag(workItem, 'KMSD');
-
-        KeReleaseSpinLock(&ThreadPool->PoolLock, oldIrql);
     }
 }
 

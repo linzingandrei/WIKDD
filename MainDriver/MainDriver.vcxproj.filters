@@ -28,6 +28,9 @@
     <ClCompile Include="threadpool_test.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="driver_filtering.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="threadpool.h">
@@ -38,6 +41,9 @@
     </ClInclude>
     <ClInclude Include="main.h">
       <Filter>Driver Files</Filter>
+    </ClInclude>
+    <ClInclude Include="driver_filtering.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
