@@ -69,6 +69,14 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 		return status;
 	}
 
+	status = PsSetLoadImageNotifyRoutine(PLoadImageNotifyRoutine);
+
+	if (!NT_SUCCESS(status)) {
+		DbgPrintEx(0, 0, "Failed to create load image notify routine (0x%08X)\n", status);
+		IoDeleteDevice(DeviceObject);
+		return status;
+	}
+
 	DriverObject->DriverUnload = MyDriverUnload;
 	return STATUS_SUCCESS;
 }
@@ -76,6 +84,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 void MyDriverUnload(_In_ PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\MyDriver");
+
+	PsRemoveLoadImageNotifyRoutine(PLoadImageNotifyRoutine);
 
 	PsSetCreateProcessNotifyRoutineEx(PsCreateProcessNotifyRoutineEx, TRUE);
 
