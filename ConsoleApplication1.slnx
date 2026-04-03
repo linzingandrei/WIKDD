@@ -6,15 +6,24 @@
   <Project Path="ConsoleApplication1/ConsoleApplication1.vcxproj" Id="a4a2a934-d5f7-47d6-af7c-d6d20d99ede8" />
   <Project Path="DriverFirst/DriverFirst.vcxproj">
     <Platform Project="x64" />
-    <Deploy />
+    <Build Solution="*|x86" Project="false" />
+    <Build Solution="Debug|x64" Project="false" />
+    <Deploy Solution="Release|x64" />
   </Project>
   <Project Path="DriverSecond/DriverSecond.vcxproj">
     <Platform Project="x64" />
-    <Deploy />
+    <Build Solution="*|x86" Project="false" />
+    <Build Solution="Debug|x64" Project="false" />
+    <Deploy Solution="Release|x64" />
   </Project>
   <Project Path="MainDriver/MainDriver.vcxproj">
     <Platform Project="x64" />
-    <Deploy />
+    <Build Solution="*|x86" Project="false" />
+    <Build Solution="Debug|x64" Project="false" />
+    <Deploy Solution="Release|x64" />
   </Project>
-  <Project Path="UnitTest1/UnitTest1.vcxproj" />
+  <Project Path="UnitTest1/UnitTest1.vcxproj">
+    <Build Solution="*|x86" Project="false" />
+    <Build Solution="Debug|x64" Project="false" />
+  </Project>
 </Solution>

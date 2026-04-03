@@ -1,6 +1,6 @@
 #pragma once
-#include "ntddk.h"
-#include "wdm.h"
+#ifdef MY_DRIVER_BUILD
+#include "ntifs.h"
 
 
 typedef enum
@@ -45,3 +45,4 @@ PLoadImageNotifyRoutine(
     _In_ PIMAGE_INFO ImageInfo
 );
 
+#endif

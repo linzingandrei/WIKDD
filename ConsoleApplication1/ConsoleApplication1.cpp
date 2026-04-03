@@ -704,6 +704,28 @@ DriverThreadPoolUninit()
     }
 }
 
+int parseArguments(char* userInput, int* arr)
+{
+    char* next_token = NULL;
+    char* p = strtok_s(userInput, " ", &next_token);
+
+    int nr = 0;
+    while (p != NULL)
+    {
+        if (nr > 0)
+            arr[nr] = atoi(p);
+
+        p = strtok_s(NULL, " ", &next_token);
+
+        nr += 1;
+
+        if (nr > 5)
+            break;
+    }
+
+    return nr;
+}
+
 int main()
 {
     //WPP_INIT_TRACING(NULL);
@@ -780,6 +802,34 @@ int main()
         if (strncmp(userInput, "uninitp", 7) == 0 || strncmp(userInput, "utp", 3) == 0)
         {
             DriverThreadPoolUninit();
+
+            userInput[0] = '\0';
+        }
+
+        if (strncmp(userInput, "protect", 7) == 0 || strncmp(userInput, "prot", 4) == 0)
+        {
+            int* pidsToProtect = (int *)malloc(10 * sizeof(int));
+            memset(pidsToProtect, 0, 10);
+            int numberOfPidsToProtect = parseArguments(userInput, pidsToProtect);
+
+            /*printf("PIDS: ");
+            for (int i = 1; i < numberOfPidsToProtect; i++)
+            {
+                printf("%d ", pidsToProtect[i]);
+            }
+            printf("\n");*/
+
+            userInput[0] = '\0';
+        }
+
+        if (strncmp(userInput, "unprotect", 9) == 0 || strncmp(userInput, "uprot", 5) == 0)
+        {
+
+            userInput[0] = '\0';
+        }
+
+        if (strncmp(userInput, "clearprotect", 12) == 0 || strncmp(userInput, "cprot", 5) == 0)
+        {
 
             userInput[0] = '\0';
         }

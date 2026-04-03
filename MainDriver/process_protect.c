@@ -6,6 +6,7 @@ GLOBALS globals;
 BOOLEAN AddProcess(_In_ ULONG Pid);
 BOOLEAN RemoveProcess(_In_ ULONG Pid);
 BOOLEAN FindProcess(_In_ ULONG Pid);
+OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID Context, POB_PRE_OPERATION_INFORMATION Info);
 
 
 void InitializeProcessProtectRoutine()
@@ -40,8 +41,11 @@ void InitializeProcessProtectRoutine()
 	} while (FALSE);
 }
 
-NTSTATUS ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
+NTSTATUS 
+ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 {
+	UNREFERENCED_PARAMETER(DeviceObject);
+
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 	NTSTATUS status = STATUS_SUCCESS;
 	ULONG len = 0;
@@ -69,15 +73,15 @@ NTSTATUS ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 					break;
 				}
 
-				KeAcquireSpinLock(globals.Lock, &OldIrql);
+				KeAcquireSpinLock(&globals.Lock, &OldIrql);
 				if (FindProcess(pid))
 				{
-					KeReleaseSpinLock(globals.Lock, &OldIrql);
+					KeReleaseSpinLock(&globals.Lock, OldIrql);
 					continue;
 				}
 				else
 				{
-					KeReleaseSpinLock(globals.Lock, &OldIrql);
+					KeReleaseSpinLock(&globals.Lock, OldIrql);
 				}
 
 				if (globals.PidsCount == MAXPIDS)
@@ -86,21 +90,21 @@ NTSTATUS ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 					break;
 				}
 
-				KeAcquireSpinLock(globals.Lock, &OldIrql);
+				KeAcquireSpinLock(&globals.Lock, &OldIrql);
 				if (!AddProcess(pid))
 				{
 					status = STATUS_UNSUCCESSFUL;
-					KeReleaseSpinLock(globals.Lock, &OldIrql);
+					KeReleaseSpinLock(&globals.Lock, OldIrql);
 					break;
 				}
 				else
 				{
-					KeReleaseSpinLock(globals.Lock, &OldIrql);
+					KeReleaseSpinLock(&globals.Lock, OldIrql);
 				}
 
-				KeAcquireSpinLock(globals.Lock, &OldIrql);
+				KeAcquireSpinLock(&globals.Lock, &OldIrql);
 				len += sizeof(ULONG);
-				KeReleaseSpinLock(globals.Lock, &OldIrql);
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
 			}
 
 			break;
@@ -127,20 +131,20 @@ NTSTATUS ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 					break;
 				}
 
-				KeAcquireSpinLock(globals.Lock, &OldIrql);
+				KeAcquireSpinLock(&globals.Lock, &OldIrql);
 				if (!RemoveProcess(pid))
 				{
-					KeReleaseSpinLock(globals.Lock, &OldIrql);
+					KeReleaseSpinLock(&globals.Lock, OldIrql);
 					continue;
 				}
 				else
 				{
-					KeReleaseSpinLock(globals.Lock, &OldIrql);
+					KeReleaseSpinLock(&globals.Lock, OldIrql);
 				}
 
-				KeAcquireSpinLock(globals.Lock, &OldIrql);
+				KeAcquireSpinLock(&globals.Lock, &OldIrql);
 				len += sizeof(ULONG);
-				KeReleaseSpinLock(globals.Lock, &OldIrql);
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
 
 				if (globals.PidsCount == 0)
 				{
@@ -154,9 +158,9 @@ NTSTATUS ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 		case IOCTL_PROCESS_PROTECT_CLEAR:
 		{
 			KIRQL OldIrql;
-			KeAcquireSpinLock(globals.Lock, &OldIrql);
+			KeAcquireSpinLock(&globals.Lock, &OldIrql);
 			memset(&globals.Pids, 0, sizeof(globals.Pids));
-			KeReleaseSpinLock(globals.Lock, &OldIrql);
+			KeReleaseSpinLock(&globals.Lock, OldIrql);
 
 			break;
 		}
@@ -175,24 +179,26 @@ NTSTATUS ProcessProtectDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 OB_PREOP_CALLBACK_STATUS
 OnPreOpenProcess(PVOID Context, POB_PRE_OPERATION_INFORMATION Info)
 {
+	UNREFERENCED_PARAMETER(Context);
+
 	if (Info->KernelHandle)
 	{
 		return OB_PREOP_SUCCESS;
 	}
 
 	PEPROCESS process = (PEPROCESS)Info->Object;
-	ULONG pid = HandleToULong(PsGetProcessId(process);
+	ULONG pid = HandleToULong(PsGetProcessId(process));
 
 	KIRQL OldIrql;
-	KeAcquireSpinLock(globals.Lock, &OldIrql);
+	KeAcquireSpinLock(&globals.Lock, &OldIrql);
 	if (FindProcess(pid))
 	{
-		KeReleaseSpinLock(globals.Lock, &OldIrql);
+		KeReleaseSpinLock(&globals.Lock, OldIrql);
 		Info->Parameters->CreateHandleInformation.DesiredAccess &= ~PROCESS_TERMINATE;
 	}
 	else
 	{
-		KeReleaseSpinLock(globals.Lock, &OldIrql);
+		KeReleaseSpinLock(&globals.Lock, OldIrql);
 	}
 
 	return OB_PREOP_SUCCESS;

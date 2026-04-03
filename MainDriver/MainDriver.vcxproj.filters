@@ -31,6 +31,9 @@
     <ClCompile Include="driver_filtering.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="process_protect.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="threadpool.h">
@@ -44,6 +47,12 @@
     </ClInclude>
     <ClInclude Include="driver_filtering.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="process_protect.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="process_protect_common.h">
+      <Filter>Driver Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
