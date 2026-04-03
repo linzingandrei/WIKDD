@@ -15,4 +15,10 @@ typedef struct _GLOBALS
 	PVOID RegHandle;
 }GLOBALS;
 
+GLOBALS globals;
+
 void InitializeProcessProtectRoutine();
+BOOLEAN AddProcess(_In_ ULONG Pid);
+BOOLEAN RemoveProcess(_In_ ULONG Pid);
+BOOLEAN FindProcess(_In_ ULONG Pid);
+OB_PREOP_CALLBACK_STATUS OnPreOpenProcess(PVOID Context, POB_PRE_OPERATION_INFORMATION Info);

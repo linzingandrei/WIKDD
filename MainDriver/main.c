@@ -1,5 +1,6 @@
 #include "threadpool.h"
 #include "threadpool_test.h"
+#include "process_protect.h"
 
 
 #include <ntddk.h>
@@ -77,6 +78,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 		return status;
 	}
 
+	InitializeProcessProtectRoutine();
+
 	DriverObject->DriverUnload = MyDriverUnload;
 	return STATUS_SUCCESS;
 }
@@ -84,6 +87,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 void MyDriverUnload(_In_ PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\MyDriver");
+
+	ObUnRegisterCallbacks(globals.RegHandle);
 
 	PsRemoveLoadImageNotifyRoutine(PLoadImageNotifyRoutine);
 
@@ -128,6 +133,7 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
 	NTSTATUS status = STATUS_SUCCESS;
+	ULONG len = 0;
 
 	PDEVICE_EXTENSION devExt = (PDEVICE_EXTENSION)(DeviceObject->DeviceExtension);
 
@@ -255,13 +261,127 @@ NTSTATUS MyDeviceControl(PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp)
 		break;
 	}
 
+	case IOCTL_PROCESS_PROTECT_BY_PID:
+	{
+		ULONG size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(ULONG) != 0)
+		{
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		PULONG data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+
+		KIRQL OldIrql;
+		for (int i = 0; i < size / sizeof(ULONG); i++)
+		{
+			ULONG pid = data[i];
+			if (pid == 0)
+			{
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+
+			KeAcquireSpinLock(&globals.Lock, &OldIrql);
+			if (FindProcess(pid))
+			{
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
+				continue;
+			}
+			else
+			{
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
+			}
+
+			if (globals.PidsCount == MAXPIDS)
+			{
+				status = STATUS_TOO_MANY_CONTEXT_IDS;
+				break;
+			}
+
+			KeAcquireSpinLock(&globals.Lock, &OldIrql);
+			if (!AddProcess(pid))
+			{
+				status = STATUS_UNSUCCESSFUL;
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
+				break;
+			}
+			else
+			{
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
+			}
+
+			KeAcquireSpinLock(&globals.Lock, &OldIrql);
+			len += sizeof(ULONG);
+			KeReleaseSpinLock(&globals.Lock, OldIrql);
+		}
+
+		break;
+	}
+
+	case IOCTL_PROCESS_UNPROTECT_BY_PID:
+	{
+		ULONG size = stack->Parameters.DeviceIoControl.InputBufferLength;
+		if (size % sizeof(ULONG) != 0)
+		{
+			status = STATUS_INVALID_BUFFER_SIZE;
+			break;
+		}
+
+		PULONG data = (ULONG*)Irp->AssociatedIrp.SystemBuffer;
+
+		KIRQL OldIrql;
+		for (int i = 0; i < size / sizeof(ULONG); i++)
+		{
+			ULONG pid = data[i];
+			if (pid == 0)
+			{
+				status = STATUS_INVALID_PARAMETER;
+				break;
+			}
+
+			KeAcquireSpinLock(&globals.Lock, &OldIrql);
+			if (!RemoveProcess(pid))
+			{
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
+				continue;
+			}
+			else
+			{
+				KeReleaseSpinLock(&globals.Lock, OldIrql);
+			}
+
+			KeAcquireSpinLock(&globals.Lock, &OldIrql);
+			len += sizeof(ULONG);
+			KeReleaseSpinLock(&globals.Lock, OldIrql);
+
+			if (globals.PidsCount == 0)
+			{
+				break;
+			}
+		}
+
+		break;
+	}
+
+	case IOCTL_PROCESS_PROTECT_CLEAR:
+	{
+		KIRQL OldIrql;
+		KeAcquireSpinLock(&globals.Lock, &OldIrql);
+		memset(&globals.Pids, 0, sizeof(globals.Pids));
+		KeReleaseSpinLock(&globals.Lock, OldIrql);
+
+		break;
+	}
+
+
 	default:
 		status = STATUS_INVALID_DEVICE_REQUEST;
 		break;
 	}
 
 	Irp->IoStatus.Status = status;
-	Irp->IoStatus.Information = 0;
+	Irp->IoStatus.Information = len;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	return status;
 }

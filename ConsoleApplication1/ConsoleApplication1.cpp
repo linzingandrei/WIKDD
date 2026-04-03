@@ -16,6 +16,7 @@
 #include <winioctl.h>
 
 #include "../MainDriver/main.h"
+#include "../MainDriver/process_protect_common.h"
 
 #include "Trace.h"
 #include <stdlib.h>
@@ -704,6 +705,109 @@ DriverThreadPoolUninit()
     }
 }
 
+INT
+DriverProtectProcess(int* pidsToProtect)
+{
+    HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        return Error("Failed to open device");
+    }
+
+    DWORD returned;
+    BOOL success = DeviceIoControl(
+        hDevice,
+        IOCTL_PROCESS_PROTECT_BY_PID,
+        pidsToProtect, pidsToProtect[0] * sizeof(int),
+        nullptr, 0,
+        &returned, nullptr
+    );
+    if (success)
+    {
+        printf("Process protect by pid request successfully sent to the driver!\n");
+        return 0;
+    }
+    else
+    {
+        return Error("!(Process protect by pid request successfully sent to the driver!)");
+    }
+}
+
+INT
+DriverUnprotectProcess(int* pidsToUnprotect)
+{
+    HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        return Error("Failed to open device");
+    }
+
+    DWORD returned;
+    BOOL success = DeviceIoControl(
+        hDevice,
+        IOCTL_PROCESS_UNPROTECT_BY_PID,
+        pidsToUnprotect, pidsToUnprotect[0] * sizeof(int),
+        nullptr, 0,
+        &returned, nullptr
+    );
+
+    if (success)
+    {
+        printf("Process unprotect by pid request successfully sent to the driver!\n");
+        return 0;
+    }
+    else
+    {
+        return Error("!(Process unprotect by pid request successfully sent to the driver!)");
+    }
+}
+
+INT
+DriverClearProtectProcess()
+{
+    HANDLE hDevice = CreateFileA("\\\\?\\MyDriver",
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+
+    if (hDevice == INVALID_HANDLE_VALUE) {
+        return Error("Failed to open device");
+    }
+
+    DWORD returned;
+    BOOL success = DeviceIoControl(
+        hDevice,
+        IOCTL_PROCESS_PROTECT_CLEAR,
+        NULL, 0,
+        nullptr, 0,
+        &returned, nullptr
+    );
+    if (success)
+    {
+        printf("Process protect clear request successfully sent to the driver!\n");
+        return 0;
+    }
+    else
+    {
+        return Error("!(Process protect clear request successfully sent to the driver!)");
+    }
+}
+
 int parseArguments(char* userInput, int* arr)
 {
     char* next_token = NULL;
@@ -811,6 +915,11 @@ int main()
             int* pidsToProtect = (int *)malloc(10 * sizeof(int));
             memset(pidsToProtect, 0, 10);
             int numberOfPidsToProtect = parseArguments(userInput, pidsToProtect);
+            pidsToProtect[0] = numberOfPidsToProtect;
+
+            DriverProtectProcess(pidsToProtect);
+
+            free(pidsToProtect);
 
             /*printf("PIDS: ");
             for (int i = 1; i < numberOfPidsToProtect; i++)
@@ -824,6 +933,14 @@ int main()
 
         if (strncmp(userInput, "unprotect", 9) == 0 || strncmp(userInput, "uprot", 5) == 0)
         {
+            int* pidsToUnprotect = (int*)malloc(10 * sizeof(int));
+            memset(pidsToUnprotect, 0, 10);
+            int numberOfPidsToUnprotect = parseArguments(userInput, pidsToUnprotect);
+            pidsToUnprotect[0] = numberOfPidsToUnprotect;
+
+            DriverUnprotectProcess(pidsToUnprotect);
+
+            free(pidsToUnprotect);
 
             userInput[0] = '\0';
         }
