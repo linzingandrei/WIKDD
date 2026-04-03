@@ -31,6 +31,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 	DriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_CLOSE] = MyCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyDeviceControl;
+	DriverObject->DriverUnload = MyDriverUnload;
 
 	UNICODE_STRING devName = RTL_CONSTANT_STRING(L"\\Device\\MyDriver");
 
@@ -58,7 +59,6 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(0, 0, "Failed to create symbolic link (0x%08X)\n", status);
-		IoDeleteDevice(DeviceObject);
 		return status;
 	}
 
@@ -66,7 +66,6 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(0, 0, "Failed to create notify routine (0x%08X)\n", status);
-		IoDeleteDevice(DeviceObject);
 		return status;
 	}
 
@@ -74,19 +73,28 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 
 	if (!NT_SUCCESS(status)) {
 		DbgPrintEx(0, 0, "Failed to create load image notify routine (0x%08X)\n", status);
-		IoDeleteDevice(DeviceObject);
 		return status;
 	}
 
 	InitializeProcessProtectRoutine();
 
-	DriverObject->DriverUnload = MyDriverUnload;
+	UNICODE_STRING altitude = RTL_CONSTANT_STRING(L"37000");
+	status = CmRegisterCallbackEx(OnRegistryNotify, &altitude, DriverObject, NULL, &RegCookie, NULL);
+	
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrintEx(0, 0, "Failed to create registry key notify routine (0x%08X)\n", status);
+		return status;
+	}
+
 	return STATUS_SUCCESS;
 }
 
 void MyDriverUnload(_In_ PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\MyDriver");
+
+	CmUnRegisterCallback(RegCookie);
 
 	ObUnRegisterCallbacks(globals.RegHandle);
 
