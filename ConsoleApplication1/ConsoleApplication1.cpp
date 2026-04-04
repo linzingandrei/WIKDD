@@ -14,6 +14,7 @@
 #include <psapi.h>
 #include <tchar.h>
 #include <winioctl.h>
+#include "TlHelp32.h"
 
 #include "../MainDriver/main.h"
 #include "../MainDriver/process_protect_common.h"
@@ -830,6 +831,37 @@ int parseArguments(char* userInput, int* arr)
     return nr;
 }
 
+int findPid(const WCHAR* procName)
+{
+    HANDLE hSnapshot;
+    PROCESSENTRY32W pe;
+    int pid = 0;
+    BOOL hResult;
+
+    hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == INVALID_HANDLE_VALUE)
+    {
+        return 0;
+    }
+
+    pe.dwSize = sizeof(PROCESSENTRY32W);
+    hResult = Process32FirstW(hSnapshot, &pe);
+
+    while (hResult)
+    {
+        if (wcscmp(procName, pe.szExeFile) == 0)
+        {
+            pid = pe.th32ProcessID;
+            break;
+        }
+
+        hResult = Process32NextW(hSnapshot, &pe);
+    }
+
+    CloseHandle(hSnapshot);
+    return pid;
+}
+
 int main()
 {
     //WPP_INIT_TRACING(NULL);
@@ -947,6 +979,37 @@ int main()
 
         if (strncmp(userInput, "clearprotect", 12) == 0 || strncmp(userInput, "cprot", 5) == 0)
         {
+            DriverClearProtectProcess();
+
+            userInput[0] = '\0';
+        }
+
+        if (strncmp(userInput, "tprot", 5) == 0)
+        {
+            int pid = findPid(L"Notepad.exe");
+
+            printf("Notepad.exe pid = %d\n", pid);
+
+            int arr[1] = { 0 };
+            arr[0] = pid;
+            DriverProtectProcess(arr);
+
+            printf("Notepad.exe should be protected now\n");
+
+            userInput[0] = '\0';
+        }
+
+        if (strncmp(userInput, "tuprot", 6) == 0)
+        {
+            int pid = findPid(L"Notepad.exe");
+
+            printf("Notepad.exe pid = %d\n", pid);
+
+            int arr[1] = { 0 };
+            arr[0] = pid;
+            DriverUnprotectProcess(arr);
+
+            printf("Notepad.exe should be unprotected now\n");
 
             userInput[0] = '\0';
         }
