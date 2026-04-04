@@ -72,6 +72,11 @@ PLoadImageNotifyRoutine(
     UNREFERENCED_PARAMETER(ProcessId);
     UNREFERENCED_PARAMETER(FullImageName);
 
+    if (!ImageInfo->SystemModeImage)
+    {
+        return;
+    }
+
     PIMAGE_INFO_EX imgInfo = CONTAINING_RECORD(ImageInfo, IMAGE_INFO_EX, ImageInfo);
 
     UNICODE_STRING imageFileName;
@@ -85,7 +90,7 @@ PLoadImageNotifyRoutine(
 
         RtlCopyMemory(imageFileName.Buffer, imgInfo->FileObject->FileName.Buffer, imageFileName.Length);
 
-        //DbgPrintEx(0, 0, "Image file name: %wZ\n", &imageFileName);
+        DbgPrintEx(0, 0, "Image file name: %wZ\n", &imageFileName);
 
         ExFreePoolWithTag(imageFileName.Buffer, 'imN');
     }
