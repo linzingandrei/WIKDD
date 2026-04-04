@@ -986,13 +986,23 @@ int main()
 
         if (strncmp(userInput, "tprot", 5) == 0)
         {
-            int pid = findPid(L"Notepad.exe");
+            int pid = findPid(L"notepad.exe");
 
             printf("Notepad.exe pid = %d\n", pid);
 
-            int arr[1] = { 0 };
-            arr[0] = pid;
+            int* arr = (int*)malloc(2 * sizeof(int));
+            memset(arr, 0, 2);
+            arr[1] = pid;
+            arr[0] = 2;
+
+            /*for (int i = 0; i < 2; i++)
+            {
+                printf("%d\n", arr[i]);
+            }*/
+
             DriverProtectProcess(arr);
+
+            free(arr);
 
             printf("Notepad.exe should be protected now\n");
 
@@ -1001,12 +1011,15 @@ int main()
 
         if (strncmp(userInput, "tuprot", 6) == 0)
         {
-            int pid = findPid(L"Notepad.exe");
+            int pid = findPid(L"notepad.exe");
 
             printf("Notepad.exe pid = %d\n", pid);
 
-            int arr[1] = { 0 };
-            arr[0] = pid;
+            int* arr = (int*)malloc(2 * sizeof(int));
+            memset(arr, 0, 2);
+            arr[1] = pid;
+            arr[0] = 2;
+
             DriverUnprotectProcess(arr);
 
             printf("Notepad.exe should be unprotected now\n");

@@ -136,7 +136,7 @@ OnRegistryNotify(
         }
         else
         {
-            DbgPrintEx(0, 0, "Key: %wZ\n", objectName);
+            DbgPrintEx(0, 0, "Key: %wZ; Status: 0x%X\n", objectName, status);
             CmCallbackReleaseKeyObjectIDEx(objectName);
         }
     }
