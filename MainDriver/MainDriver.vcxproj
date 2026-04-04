@@ -122,6 +122,7 @@
     <ClCompile Include="main.c" />
     <ClCompile Include="driver_filtering.c" />
     <ClCompile Include="process_protect.c" />
+    <ClCompile Include="remote_thread_detection.c" />
     <ClCompile Include="threadpool.c" />
     <ClCompile Include="threadpool_test.c" />
   </ItemGroup>
@@ -130,6 +131,7 @@
     <ClInclude Include="main.h" />
     <ClInclude Include="process_protect.h" />
     <ClInclude Include="process_protect_common.h" />
+    <ClInclude Include="remote_thread_detection.h" />
     <ClInclude Include="threadpool.h" />
     <ClInclude Include="threadpool_test.h" />
   </ItemGroup>

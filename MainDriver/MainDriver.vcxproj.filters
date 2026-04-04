@@ -34,6 +34,9 @@
     <ClCompile Include="process_protect.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="remote_thread_detection.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="threadpool.h">
@@ -53,6 +56,9 @@
     </ClInclude>
     <ClInclude Include="process_protect_common.h">
       <Filter>Driver Files</Filter>
+    </ClInclude>
+    <ClInclude Include="remote_thread_detection.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

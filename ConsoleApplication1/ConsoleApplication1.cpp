@@ -16,8 +16,11 @@
 #include <winioctl.h>
 #include "TlHelp32.h"
 
+#include "thread_injection.h"
+
 #include "../MainDriver/main.h"
 #include "../MainDriver/process_protect_common.h"
+
 
 #include "Trace.h"
 #include <stdlib.h>
@@ -1011,7 +1014,7 @@ int main()
 
         if (strncmp(userInput, "tuprot", 6) == 0)
         {
-            int pid = findPid(L"notepad.exe");
+            int pid = findPid(L"notepad.exe"); //for some reason Windows 11 has "Notepad.exe" and Windows 10 has "notepad.exe"
 
             printf("Notepad.exe pid = %d\n", pid);
 
@@ -1025,6 +1028,27 @@ int main()
             printf("Notepad.exe should be unprotected now\n");
 
             userInput[0] = '\0';
+        }
+
+         if (strncmp(userInput, "vaxproc", 7) == 0)
+        {
+             printf("Enter a program name (first manually open the program): ");
+             WCHAR programName[100] = { 0 };
+             wscanf_s(L"%ls", programName, 255);
+
+             //wprintf(L"%ls\n", programName);
+
+             int pid = findPid(programName);
+
+             printf("Notepad.exe pid = %d\n", pid);
+
+             int res = InjectThreadIntoGivenProcess(pid);
+
+             //DriverThreadInjectionDetection();
+
+             //printf("Notepad.exe should be unprotected now\n");
+
+             userInput[0] = '\0';
         }
 
         if (strncmp(userInput, "exit", 4) == 0)

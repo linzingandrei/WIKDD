@@ -1,6 +1,7 @@
 #include "threadpool.h"
 #include "threadpool_test.h"
 #include "process_protect.h"
+#include "remote_thread_detection.h"
 
 
 #include <ntddk.h>
@@ -84,6 +85,13 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
 	if (!NT_SUCCESS(status))
 	{
 		DbgPrintEx(0, 0, "Failed to create registry key notify routine (0x%08X)\n", status);
+		return status;
+	}
+
+	status = PsSetCreateThreadNotifyRoutine(PCreateThreadNotifyRoutine);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrintEx(0, 0, "Failed to create thread notify routine (0x%08X)\n", status);
 		return status;
 	}
 
