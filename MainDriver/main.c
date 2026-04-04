@@ -102,6 +102,8 @@ void MyDriverUnload(_In_ PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\MyDriver");
 
+	PsRemoveCreateThreadNotifyRoutine(PCreateThreadNotifyRoutine);
+
 	CmUnRegisterCallback(RegCookie);
 
 	ObUnRegisterCallbacks(globals.RegHandle);

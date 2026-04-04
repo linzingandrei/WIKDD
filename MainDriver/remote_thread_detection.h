@@ -1,6 +1,9 @@
 #pragma once
 
+#include "ntifs.h"
 #include "ntddk.h"
+
+#define ARRAY_SIZE 10
 
 
 VOID

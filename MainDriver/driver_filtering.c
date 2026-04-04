@@ -85,7 +85,7 @@ PLoadImageNotifyRoutine(
 
         RtlCopyMemory(imageFileName.Buffer, imgInfo->FileObject->FileName.Buffer, imageFileName.Length);
 
-        DbgPrintEx(0, 0, "Image file name: %wZ\n", &imageFileName);
+        //DbgPrintEx(0, 0, "Image file name: %wZ\n", &imageFileName);
 
         ExFreePoolWithTag(imageFileName.Buffer, 'imN');
     }
