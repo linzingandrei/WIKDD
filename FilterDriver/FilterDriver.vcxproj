@@ -131,10 +131,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\wikdd6k\main.c" />
-    <ClCompile Include="file_operations.c" />
+    <ClCompile Include="process_filter.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="file_operations.h" />
+    <ClInclude Include="process_filter.h" />
     <ClInclude Include="trace.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

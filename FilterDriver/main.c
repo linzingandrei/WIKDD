@@ -1,7 +1,7 @@
 #include <fltKernel.h>
 #include <wdm.h>
 
-#include "./process_filter.h"
+#include "process_filter.h"
 
 #include "trace.h"
 #include "main.tmh"
@@ -15,9 +15,9 @@ DRIVER_INITIALIZE DriverEntry;
 
 typedef struct _MY_CUSTOM_MESSAGE
 {
-	WCHAR message[512];
-	ULONG messageLength;
-} MY_CUSTOM_MESSAGE, *PMY_CUSTOM_MESSAGE;
+    WCHAR message[512];
+    ULONG messageLength;
+} MY_CUSTOM_MESSAGE, * PMY_CUSTOM_MESSAGE;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
@@ -66,7 +66,7 @@ FilterUnload(
 * Callbacks for communication with user-mode application
 */
 
-NTSTATUS 
+NTSTATUS
 ConnectNotifyCallback(
     PFLT_PORT ClientPort,
     PVOID ServerPortCookie,
@@ -83,8 +83,8 @@ ConnectNotifyCallback(
     UNREFERENCED_PARAMETER(ConnectionPortCookie);
 
     gClientPort = ClientPort;
-    
-	return STATUS_SUCCESS;
+
+    return STATUS_SUCCESS;
 }
 
 VOID
@@ -98,7 +98,7 @@ DisconnectNotifyCallback(
     {
         FltCloseClientPort(gFilterRegistration, &gClientPort);
         gClientPort = NULL;
-	}
+    }
 }
 
 VOID
@@ -139,12 +139,12 @@ MessageNotifyCallback(
     //ULONG charCount = msgStruct->messageLength / sizeof(WCHAR);
     //DbgPrint("Received message from user-mode: %.*ws\n", charCount, msgStruct->message);
 
-	HandleUserMessage(msgStruct->message, msgStruct->messageLength);
+    HandleUserMessage(msgStruct->message, msgStruct->messageLength);
 
     /*if (OutputBuffer && OutputBufferLength >= sizeof("ACK"))
     {
         RtlCopyMemory(OutputBuffer, "ACK", sizeof("ACK"));
-		*ReturnOutputBufferLength = sizeof("ACK");
+        *ReturnOutputBufferLength = sizeof("ACK");
     }*/
 
     return STATUS_SUCCESS;
@@ -158,10 +158,10 @@ CreateCommunicationPort()
     __debugbreak();
 
     OBJECT_ATTRIBUTES objAttr;
-	UNICODE_STRING portName = RTL_CONSTANT_STRING(L"\\MyFilterPort");
+    UNICODE_STRING portName = RTL_CONSTANT_STRING(L"\\MyFilterPort");
 
     PSECURITY_DESCRIPTOR sd;
-	FltBuildDefaultSecurityDescriptor(&sd, FLT_PORT_ALL_ACCESS);
+    FltBuildDefaultSecurityDescriptor(&sd, FLT_PORT_ALL_ACCESS);
 
     InitializeObjectAttributes(
         &objAttr,
@@ -180,9 +180,9 @@ CreateCommunicationPort()
         DisconnectNotifyCallback,
         MessageNotifyCallback,
         1
-	);
+    );
 
-	FltFreeSecurityDescriptor(sd);
+    FltFreeSecurityDescriptor(sd);
 
     return status;
 }
@@ -208,24 +208,24 @@ FLT_PREOP_CALLBACK_STATUS PreCreate(
     UNREFERENCED_PARAMETER(Buffer);
 
 
-	PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
-	MY_CUSTOM_MESSAGE msg;
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    MY_CUSTOM_MESSAGE msg;
 
     if (gClientPort && NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
     {
 
         //__debugbreak();
-		wcscpy_s(msg.message, 512, nameInfo->Name.Buffer);
-		msg.messageLength = nameInfo->Name.Length;
+        wcscpy_s(msg.message, 512, nameInfo->Name.Buffer);
+        msg.messageLength = nameInfo->Name.Length;
 
         //DbgPrint("%s\n", msg.message);
         //DbgPrint("%d\n", msg.messageLength);
-        
-		FltSendMessage(gFilterRegistration, &gClientPort, &msg, sizeof(msg), NULL, NULL, NULL);
-		FltReleaseFileNameInformation(nameInfo);
+
+        FltSendMessage(gFilterRegistration, &gClientPort, &msg, sizeof(msg), NULL, NULL, NULL);
+        FltReleaseFileNameInformation(nameInfo);
     }
 
-	return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////

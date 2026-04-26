@@ -27,7 +27,7 @@
     <ClCompile Include="..\wikdd6k\main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="file_operations.c">
+    <ClCompile Include="process_filter.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -35,7 +35,7 @@
     <ClInclude Include="trace.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="file_operations.h">
+    <ClInclude Include="process_filter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

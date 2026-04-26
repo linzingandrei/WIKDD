@@ -875,6 +875,17 @@ typedef struct _MY_CUSTOM_MESSAGE
     ULONG messageLength;
 } MY_CUSTOM_MESSAGE, *PMY_CUSTOM_MESSAGE;
 
+NTSTATUS
+SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
+{
+    BYTE buffer[sizeof(FILTER_MESSAGE_HEADER) + sizeof(MY_CUSTOM_MESSAGE)];
+    PFILTER_MESSAGE_HEADER header = (PFILTER_MESSAGE_HEADER)buffer;
+    PMY_CUSTOM_MESSAGE customMessage = (PMY_CUSTOM_MESSAGE)(buffer + sizeof(FILTER_MESSAGE_HEADER));
+    wcscpy_s(customMessage->message, 512, message);
+    customMessage->messageLength = wcslen(customMessage->message) * sizeof(WCHAR);
+    return FilterSendMessage(port, buffer, sizeof(buffer), NULL, 0, NULL);
+}
+
 int main() {
     HANDLE port;
     HRESULT hr;
@@ -891,20 +902,22 @@ int main() {
         return 1;
     }
 
-    printf("Connected. Waiting for file events...\n");
+    WCHAR userInput[512];
+	scanf_s("%512ls", userInput, (unsigned)_countof(userInput));
+	SendCustomMessageToDriver(port, userInput);
 
-    while (TRUE) {
-        hr = FilterGetMessage(port, header, sizeof(buffer), NULL);
+    //while (TRUE) {
+    //    hr = FilterGetMessage(port, header, sizeof(buffer), NULL);
 
-        if (SUCCEEDED(hr)) {
-            printf("File Accessed: %S\n", message->message);
-            //printf("SUCCESS, file accessed\n");
-        }
-        else {
-            printf("Connection lost. Error 0x%X\n", hr);
-            break;
-        }
-    }
+    //    if (SUCCEEDED(hr)) {
+    //        printf("File Accessed: %S\n", message->message);
+    //        //printf("SUCCESS, file accessed\n");
+    //    }
+    //    else {
+    //        printf("Connection lost. Error 0x%X\n", hr);
+    //        break;
+    //    }
+    //}
 
     CloseHandle(port);
     return 0;
