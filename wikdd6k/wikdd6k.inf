@@ -1,0 +1,122 @@
+;;;
+;;; wikdd6k
+;;;
+
+[Version]
+Signature   = "$Windows NT$"
+Class = "AntiVirus"
+ClassGuid = {b1d1a169-c54f-4379-81db-bee7d88d7454}
+Provider    = %ManufacturerName%
+DriverVer   = 
+CatalogFile = wikdd6k.cat
+PnpLockDown = 1 
+
+[DestinationDirs]
+Wikdd6kDownlevel.CopyDriverFiles = 12            ; %windir%\system32\drivers
+Wikdd6kDownlevel.DelDriverFiles  = 12            ; %windir%\system32\drivers
+Wikdd6k.DriverFiles              = 13            ; driver store
+
+[SourceDisksFiles]
+wikdd6k.sys = 1,,
+
+[SourceDisksNames]
+1 = %DiskId1%,,,
+
+;;
+;; Driver Files
+;;
+[Wikdd6k.DriverFiles]
+%DriverName%.sys
+
+[Wikdd6kDownlevel.CopyDriverFiles]
+%DriverName%.sys
+
+[Wikdd6kDownlevel.DelDriverFiles]
+%DriverName%.sys
+
+;;
+;; Install
+;;
+[DefaultInstall.NT$ARCH$.10.0...25952]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = Wikdd6k.DriverFiles
+
+[DefaultInstall.NT$ARCH$.10.0...25952.Services]
+AddService          = %ServiceName%,,Wikdd6k.Service
+
+[DefaultInstall.NT$ARCH$]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = Wikdd6kDownlevel.CopyDriverFiles
+
+[DefaultInstall.NT$ARCH$.Services]
+AddService          = %ServiceName%,,Wikdd6kDownlevel.Service
+
+;;
+;; Uninstall
+;;
+[DefaultUninstall.NT$ARCH$]
+LegacyUninstall = 1
+DelFiles        = Wikdd6kDownlevel.DelDriverFiles
+
+[DefaultUninstall.NT$ARCH$.Services]
+DelService      = %ServiceName%,0x200      ;Ensure service is stopped before deleting
+
+
+;;
+;; Service
+;;
+[Wikdd6k.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %13%\%DriverName%.sys
+Dependencies     = "FltMgr"
+ServiceType      = 2                            ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ;SERVICE_DEMAND_START
+ErrorControl     = 1                            ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = Wikdd6k.AddRegistry
+
+[Wikdd6kDownlevel.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\%DriverName%.sys
+Dependencies     = "FltMgr"
+ServiceType      = 2                            ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ;SERVICE_DEMAND_START
+ErrorControl     = 1                            ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = Wikdd6kDownlevel.AddRegistry
+
+
+;;
+;; Registry
+;;
+[Wikdd6k.AddRegistry]
+HKR,"Parameters","DebugFlags",0x00010001 ,0x0
+HKR,"Parameters","SupportedFeatures",0x00010001,0x7
+HKR,"Parameters\Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Parameters\Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Parameters\Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+[Wikdd6kDownlevel.AddRegistry]
+HKR,,"DebugFlags",0x00010001 ,0x0
+HKR,,"SupportedFeatures",0x00010001,0x7
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+;;
+;; String Section
+;;
+
+[Strings]
+ManufacturerName        = "wikdd6k"
+ServiceDescription      = "wikdd6k Mini-Filter Driver"
+ServiceName             = "wikdd6k"
+DriverName              = "wikdd6k"
+DiskId1                 = "wikdd6k Device Installation Disk"
+
+DefaultInstance         = "wikdd6k Instance"
+Instance1.Name          = "wikdd6k Instance"
+Instance1.Altitude      = "389999"
+Instance1.Flags         = 0x0              ; Allow all attachments

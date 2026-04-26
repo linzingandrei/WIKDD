@@ -16,6 +16,10 @@
     <Build Solution="Debug|x64" Project="false" />
     <Deploy Solution="Release|x64" />
   </Project>
+  <Project Path="FilterDriver/FilterDriver.vcxproj">
+    <Platform Project="x64" />
+    <Deploy />
+  </Project>
   <Project Path="MainDriver/MainDriver.vcxproj">
     <Platform Project="x64" />
     <Build Solution="*|x86" Project="false" />
