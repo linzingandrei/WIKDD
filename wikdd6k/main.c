@@ -1,6 +1,8 @@
 #include <fltKernel.h>
 #include <wdm.h>
 
+#include "./process_filter.h"
+
 #include "trace.h"
 #include "main.tmh"
 
@@ -16,6 +18,53 @@ typedef struct _MY_CUSTOM_MESSAGE
 	WCHAR message[512];
 	ULONG messageLength;
 } MY_CUSTOM_MESSAGE, *PMY_CUSTOM_MESSAGE;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+* Prototypes
+*/
+
+NTSTATUS
+ConnectNotifyCallback(
+    PFLT_PORT ClientPort,
+    PVOID ServerPortCookie,
+    PVOID ConnectionContext,
+    ULONG SizeOfContext,
+    PVOID* ConnectionPortCookie
+);
+
+VOID
+DisconnectNotifyCallback(
+    PVOID ConnectionCookie
+);
+
+NTSTATUS
+MessageNotifyCallback(
+    PVOID PortCookie,
+    PVOID InputBuffer,
+    ULONG InputBufferLength,
+    PVOID OutputBuffer,
+    ULONG OutputBufferLength,
+    PULONG ReturnOutputBufferLength
+);
+
+NTSTATUS CreateCommunicationPort();
+
+FLT_PREOP_CALLBACK_STATUS PreCreate(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* Buffer
+);
+
+NTSTATUS
+FilterUnload(
+    _In_ FLT_FILTER_UNLOAD_FLAGS Flags
+);
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+* Callbacks for communication with user-mode application
+*/
 
 NTSTATUS 
 ConnectNotifyCallback(
@@ -52,6 +101,21 @@ DisconnectNotifyCallback(
 	}
 }
 
+VOID
+HandleUserMessage(const WCHAR* message, ULONG messageLength)
+{
+    UNREFERENCED_PARAMETER(message);
+    UNREFERENCED_PARAMETER(messageLength);
+    __debugbreak();
+    //DbgPrintEx(0, 0, "Received message from user-mode: %.*ws\n", messageLength / sizeof(WCHAR), message);
+    MY_CUSTOM_MESSAGE msg;
+
+    if (strcmp(message, L"process") == 0)
+    {
+        ProcessFilterInitialize();
+    }
+}
+
 NTSTATUS
 MessageNotifyCallback(
     PVOID PortCookie,
@@ -62,6 +126,8 @@ MessageNotifyCallback(
     PULONG ReturnOutputBufferLength
 )
 {
+    __debugbreak();
+
     UNREFERENCED_PARAMETER(PortCookie);
 
     if (InputBufferLength < sizeof(CHAR))
@@ -69,16 +135,22 @@ MessageNotifyCallback(
         return STATUS_INVALID_PARAMETER;
     }
 
-	DbgPrint("Received message from user-mode: %.*s\n", InputBufferLength, (CHAR*)InputBuffer);
+    PMY_CUSTOM_MESSAGE msgStruct = (PMY_CUSTOM_MESSAGE)((CHAR*)InputBuffer + sizeof(FILTER_MESSAGE_HEADER));
+    //ULONG charCount = msgStruct->messageLength / sizeof(WCHAR);
+    //DbgPrint("Received message from user-mode: %.*ws\n", charCount, msgStruct->message);
 
-    if (OutputBuffer && OutputBufferLength >= sizeof("ACK"))
+	HandleUserMessage(msgStruct->message, msgStruct->messageLength);
+
+    /*if (OutputBuffer && OutputBufferLength >= sizeof("ACK"))
     {
         RtlCopyMemory(OutputBuffer, "ACK", sizeof("ACK"));
 		*ReturnOutputBufferLength = sizeof("ACK");
-    }
+    }*/
 
     return STATUS_SUCCESS;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 NTSTATUS
 CreateCommunicationPort()
@@ -115,27 +187,16 @@ CreateCommunicationPort()
     return status;
 }
 
-NTSTATUS
-FilterUnload(
-    _In_ FLT_FILTER_UNLOAD_FLAGS Flags
-)
-{
-    WikddLogInfo("Unloading driver. Flags = 0x%x", Flags);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+* File operation callbacks
+*/
 
-    if (gServerPort)
-    {
-        FltCloseCommunicationPort(gServerPort);
-	    gServerPort = NULL;
-    }
+CONST FLT_OPERATION_REGISTRATION callbacks[] = {
+    {IRP_MJ_CREATE, 0, PreCreate, NULL},
 
-    if (gFilterRegistration)
-    {
-        FltUnregisterFilter(gFilterRegistration);
-        WPP_CLEANUP(gDriverObject);
-    }
-
-    return STATUS_SUCCESS;
-}
+    { IRP_MJ_OPERATION_END }
+};
 
 FLT_PREOP_CALLBACK_STATUS PreCreate(
     _Inout_ PFLT_CALLBACK_DATA Data,
@@ -167,11 +228,10 @@ FLT_PREOP_CALLBACK_STATUS PreCreate(
 	return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
-CONST FLT_OPERATION_REGISTRATION callbacks[] = {
-    {IRP_MJ_CREATE, 0, PreCreate, NULL},
-
-    { IRP_MJ_OPERATION_END }
-};
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+* Driver entry and unload
+*/
 
 CONST FLT_REGISTRATION fltReg = {
 
@@ -193,6 +253,28 @@ CONST FLT_REGISTRATION fltReg = {
     NULL,                               //  GenerateDestinationFileName
     NULL                                //  NormalizeNameComponent
 };
+
+NTSTATUS
+FilterUnload(
+    _In_ FLT_FILTER_UNLOAD_FLAGS Flags
+)
+{
+    WikddLogInfo("Unloading driver. Flags = 0x%x", Flags);
+
+    if (gServerPort)
+    {
+        FltCloseCommunicationPort(gServerPort);
+        gServerPort = NULL;
+    }
+
+    if (gFilterRegistration)
+    {
+        FltUnregisterFilter(gFilterRegistration);
+        WPP_CLEANUP(gDriverObject);
+    }
+
+    return STATUS_SUCCESS;
+}
 
 NTSTATUS
 DriverEntry(

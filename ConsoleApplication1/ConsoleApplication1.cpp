@@ -869,19 +869,38 @@ int findPid(const WCHAR* procName)
     return pid;
 }
 
+typedef struct _REPLY_DATA
+{
+    WCHAR message[1024];
+    ULONG messageLength;
+} REPLY_DATA, * PREPLY_DATA;
+
 typedef struct _MY_CUSTOM_MESSAGE
 {
-    WCHAR message[512];
-    ULONG messageLength;
-} MY_CUSTOM_MESSAGE, *PMY_CUSTOM_MESSAGE;
+    FILTER_MESSAGE_HEADER headers;
+    REPLY_DATA replyData;
+
+} MY_CUSTOM_MESSAGE, * PMY_CUSTOM_MESSAGE;
+
+NTSTATUS
+SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
+{
+    BYTE buffer[sizeof(MY_CUSTOM_MESSAGE)];
+	PMY_CUSTOM_MESSAGE customMessage = (PMY_CUSTOM_MESSAGE)buffer;
+    ZeroMemory(&customMessage->headers, sizeof(FILTER_MESSAGE_HEADER));
+
+    wcscpy_s(customMessage->replyData.message, 1024, message);
+    customMessage->replyData.messageLength = wcslen(customMessage->replyData.message) * sizeof(WCHAR);
+    return FilterSendMessage(port, &customMessage->replyData, sizeof(REPLY_DATA), NULL, 0, NULL);
+}
 
 int main() {
     HANDLE port;
     HRESULT hr;
 
-    BYTE buffer[sizeof(FILTER_MESSAGE_HEADER) + sizeof(MY_CUSTOM_MESSAGE)];
-    PFILTER_MESSAGE_HEADER header = (PFILTER_MESSAGE_HEADER)buffer;
-	PMY_CUSTOM_MESSAGE message = (PMY_CUSTOM_MESSAGE)(buffer + sizeof(FILTER_MESSAGE_HEADER));
+    BYTE buffer[sizeof(MY_CUSTOM_MESSAGE)];
+    PMY_CUSTOM_MESSAGE customMessage = (PMY_CUSTOM_MESSAGE)buffer;
+    ZeroMemory(&customMessage->headers, sizeof(FILTER_MESSAGE_HEADER));
 
     printf("Connecting to driver...\n");
 
@@ -891,13 +910,20 @@ int main() {
         return 1;
     }
 
-    printf("Connected. Waiting for file events...\n");
+    WCHAR userInput[1024];
+    //printf("Enter command: ");
+	//scanf_s("%ls", userInput, (unsigned)_countof(userInput));
+	SendCustomMessageToDriver(port, L"image");
 
     while (TRUE) {
-        hr = FilterGetMessage(port, header, sizeof(buffer), NULL);
+        printf("Getting message\n");
+
+		//ZeroMemory(buffer, sizeof(buffer));
+
+        hr = FilterGetMessage(port, &customMessage->headers, sizeof(MY_CUSTOM_MESSAGE), NULL);
 
         if (SUCCEEDED(hr)) {
-            printf("File Accessed: %S\n", message->message);
+            printf("File Accessed: %S\n", customMessage->replyData.message);
             //printf("SUCCESS, file accessed\n");
         }
         else {
