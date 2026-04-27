@@ -24,18 +24,12 @@
     </Inf>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\wikdd6k\main.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="process_filter.c">
+    <ClCompile Include="main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="trace.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="process_filter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
