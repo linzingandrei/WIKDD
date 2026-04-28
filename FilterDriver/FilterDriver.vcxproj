@@ -135,8 +135,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.c" />
+    <ClCompile Include="threadpool.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="threadpool.h" />
     <ClInclude Include="trace.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

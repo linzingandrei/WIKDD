@@ -1,6 +1,7 @@
 #include <fltKernel.h>
 #include <wdm.h>
 #include "ntstrsafe.h"
+#include "threadpool.h"
 
 #include "trace.h"
 #include "main.tmh"
@@ -27,6 +28,23 @@ typedef struct _MY_CUSTOM_MESSAGE
     REPLY_DATA replyData;
     
 } MY_CUSTOM_MESSAGE, * PMY_CUSTOM_MESSAGE;
+
+BOOLEAN hasBeenInitialized = FALSE;
+
+typedef struct _MY_CONTEXT
+{
+    KSPIN_LOCK ContextLock;
+    UINT32 Number;
+} MY_CONTEXT;
+
+typedef struct _MY_THREADPOOL {
+    MY_THREAD_POOL tp;
+    MY_CONTEXT ctx;
+
+    int numberOfThreadPools;
+} MY_THREADPOOL, *PMY_THREADPOOL;
+
+PMY_THREADPOOL gThreadPool = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
@@ -70,6 +88,10 @@ FilterUnload(
     _In_ FLT_FILTER_UNLOAD_FLAGS Flags
 );
 
+VOID SendWorker(
+    PVOID ctx
+);
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
 * Stuff related to processes
@@ -89,17 +111,17 @@ ProcFltSendMessageProcessCreate(
     LARGE_INTEGER timestamp;
     KeQuerySystemTime(&timestamp);
 
-   /* RtlStringCchPrintfW(
-        msg.message,
-        512,
+    RtlStringCchPrintfW(
+        msg.replyData.message,
+        1024,
         L"[%llu] [ProcessCreate] [%lu] Path=%wZ Cmd=%wZ",
         timestamp.QuadPart,
         HandleToULong(ProcessId),
         CreateInfo->ImageFileName,
         CreateInfo->CommandLine
-    );*/
+    );
 
-	wcscpy(msg.replyData.message, L"process");
+	//wcscpy(msg.replyData.message, L"process");
 
     msg.replyData.messageLength = (ULONG)wcslen(msg.replyData.message) * sizeof(WCHAR);
 
@@ -108,43 +130,79 @@ ProcFltSendMessageProcessCreate(
         return;
 	}
 
+    LARGE_INTEGER timeout;
 
-    FltSendMessage(
+    timeout.QuadPart = -10 * 1000 * 1000;
+
+    NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+    status = FltSendMessage(
         gFilterRegistration,
         &gClientPort,
         &msg.replyData,
         sizeof(REPLY_DATA),
         NULL,
         NULL,
-        NULL
+        &timeout
     );
+
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrintEx(0, 0, "Failed to send message to user-mode application. Status: 0x%X\n", status);
+    }
 }
 
-//static VOID
-//ProcFltSendMessageProcessTerminate(
-//    _In_ HANDLE ProcessId
-//)
-//{
-//    UNICODE_STRING message;
-//    ULONG32 msgSize = 4 * PAGE_SIZE;
-//    message.Buffer = ExAllocatePoolWithTag(PagedPool, msgSize, 'tag1');
-//    if (!message.Buffer)
-//    {
-//        return;
-//    }
-//    message.MaximumLength = 4 * PAGE_SIZE;
-//    message.Length = 0;
-//
-//    LARGE_INTEGER timestamp = { 0 };
-//    KeQuerySystemTime(&timestamp);
-//
-//    //PUNICODE_STRING ImageFileName = NULL;
-//
-//    //CommSendString(&message);
-//    FltSendMessage(gFilterRegistration, &gClientPort, &message, sizeof(message), NULL, NULL, NULL);
-//    ExFreePoolWithTag(message.Buffer, 'tag1');
-//
-//}
+static VOID
+ProcFltSendMessageProcessTerminate(
+    _In_ HANDLE ProcessId
+)
+{
+    UNREFERENCED_PARAMETER(ProcessId);
+
+    MY_CUSTOM_MESSAGE msg = { 0 };
+
+    LARGE_INTEGER timestamp;
+    KeQuerySystemTime(&timestamp);
+
+    RtlStringCchPrintfW(
+        msg.replyData.message,
+        1024,
+        L"[%llu] [ProcessTerminate] [%lu]",
+        timestamp.QuadPart,
+        HandleToULong(ProcessId)
+    );
+
+    //wcscpy(msg.replyData.message, L"process");
+
+    msg.replyData.messageLength = (ULONG)wcslen(msg.replyData.message) * sizeof(WCHAR);
+
+    if (!gClientPort)
+    {
+        return;
+    }
+
+    LARGE_INTEGER timeout;
+
+    timeout.QuadPart = -10 * 1000 * 1000;
+
+    NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+    status = FltSendMessage(
+        gFilterRegistration,
+        &gClientPort,
+        &msg.replyData,
+        sizeof(REPLY_DATA),
+        NULL,
+        NULL,
+        &timeout
+    );
+
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrintEx(0, 0, "Failed to send message to user-mode application. Status: 0x%X\n", status);
+    }
+
+}
 
 VOID
 ProcessFltNotifyRoutine(
@@ -165,10 +223,10 @@ ProcessFltNotifyRoutine(
         //__debugbreak();
         ProcFltSendMessageProcessCreate(ProcessId, CreateInfo);
     }
-  /*  else
+    else
     {
         ProcFltSendMessageProcessTerminate(ProcessId);
-    }*/
+    }
 }
 
 NTSTATUS
@@ -224,38 +282,22 @@ PLoadImageNotifyRoutine(
 
         RtlCopyMemory(imageFileName.Buffer, imgInfo->FileObject->FileName.Buffer, imageFileName.Length);
 
-        DbgPrintEx(0, 0, "Image file name: %wZ\n", &imageFileName);
-
-        MY_CUSTOM_MESSAGE msg = { 0 };
-
-        //__debugbreak();
-        wcscpy_s(msg.replyData.message, 1024, imageFileName.Buffer);
-        msg.replyData.messageLength = (ULONG)wcslen(msg.replyData.message) * sizeof(WCHAR);
-
-        ExFreePoolWithTag(imageFileName.Buffer, 'imN');
-
-        //wcscpy(msg.replyData.message, L"image");
-
-        LARGE_INTEGER timeout;
-
-        timeout.QuadPart = -10 * 1000 * 1000;
-
-        NTSTATUS status = STATUS_UNSUCCESSFUL;
-
-        status = FltSendMessage(
-            gFilterRegistration,
-            &gClientPort,
-            &msg.replyData,
-            sizeof(REPLY_DATA),
-            NULL,
-            NULL,
-            &timeout
+        PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            sizeof(MY_CUSTOM_MESSAGE),
+            'gsmT'
         );
 
-        if (!NT_SUCCESS(status))
-        {
-            DbgPrintEx(0, 0, "Failed to send message to user-mode application. Status: 0x%X\n", status);
-		}
+        if (!msg)
+            return;
+
+        RtlZeroMemory(msg, sizeof(*msg));
+
+        wcscpy_s(msg->replyData.message, 1024, imageFileName.Buffer);
+
+        msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
+
+        TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
     }
 }
 
@@ -267,21 +309,13 @@ ImageFltNotifyRoutine(
 )
 {
     //__debugbreak();
+
     if (!gImageMonitoringEnabled)
     {
         return;
     }
 
-
-
-    //if (ImageInfo->SystemModeImage)
-    //{
-        PLoadImageNotifyRoutine(FullImageName, ProcessId, ImageInfo);
-    //}
-    /*  else
-      {
-          ProcFltSendMessageProcessTerminate(ProcessId);
-      }*/
+    PLoadImageNotifyRoutine(FullImageName, ProcessId, ImageInfo);
 }
 
 NTSTATUS
@@ -311,7 +345,7 @@ ConnectNotifyCallback(
     PVOID* ConnectionPortCookie
 )
 {
-    __debugbreak();
+    //__debugbreak();
 
     UNREFERENCED_PARAMETER(ServerPortCookie);
     UNREFERENCED_PARAMETER(ConnectionContext);
@@ -342,10 +376,8 @@ HandleUserMessage(const WCHAR* message, ULONG messageLength)
 {
     UNREFERENCED_PARAMETER(message);
     UNREFERENCED_PARAMETER(messageLength);
+
     __debugbreak();
-    //DbgPrintEx(0, 0, "Received message from user-mode: %.*ws\n", messageLength / sizeof(WCHAR), message);
-    MY_CUSTOM_MESSAGE msg;
-	UNREFERENCED_PARAMETER(msg);
 
 	if (wcsncmp(message, L"process", messageLength / sizeof(WCHAR)) == 0)
     {
@@ -397,11 +429,59 @@ MessageNotifyCallback(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+* Communication & Threadpool stuff
+*/
+
+VOID SendWorker(PVOID ctx)
+{
+    PMY_CUSTOM_MESSAGE msg = (PMY_CUSTOM_MESSAGE)ctx;
+
+    LARGE_INTEGER timeout;
+    timeout.QuadPart = -10 * 1000 * 1000;
+
+    if (gClientPort)
+    {
+        NTSTATUS status = FltSendMessage(
+            gFilterRegistration,
+            &gClientPort,
+            &msg->replyData,
+            sizeof(REPLY_DATA),
+            NULL,
+            NULL,
+            &timeout
+        );
+
+        if (!NT_SUCCESS(status))
+        {
+            DbgPrintEx(0, 0, "FltSendMessage failed: 0x%X\n", status);
+        }
+    }
+
+    ExFreePoolWithTag(msg, 'gsmT');
+}
+
+void InitThreadPool(PMY_THREADPOOL threadpool)
+{
+    hasBeenInitialized = TRUE;
+
+    RtlZeroMemory(&threadpool->tp, sizeof(threadpool->tp));
+    RtlZeroMemory(&threadpool->ctx, sizeof(threadpool->ctx));
+
+    NTSTATUS status = TpInit(&threadpool->tp, 5);
+    if (!NT_SUCCESS(status))
+    {
+
+    }
+
+    KeInitializeSpinLock(&threadpool->ctx.ContextLock);
+    threadpool->ctx.Number = 0;
+}
 
 NTSTATUS
 CreateCommunicationPort()
 {
-    __debugbreak();
+    //__debugbreak();
 
     OBJECT_ATTRIBUTES objAttr;
     UNICODE_STRING portName = RTL_CONSTANT_STRING(L"\\MyFilterPort");
@@ -517,6 +597,13 @@ FilterUnload(
         WPP_CLEANUP(gDriverObject);
     }
 
+    if (gThreadPool)
+    {
+        TpUninit(&gThreadPool->tp);
+        ExFreePoolWithTag(gThreadPool, 'ptmT');
+        gThreadPool = NULL;
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -544,6 +631,16 @@ DriverEntry(
         WikddLogApiFailedNt(status, "FltRegisterFilter");
         return status;
     }
+
+    gThreadPool = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(MY_THREADPOOL), 'ptmT');
+    if (!gThreadPool)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(gThreadPool, sizeof(MY_THREADPOOL));
+
+    InitThreadPool(gThreadPool);
 
     status = CreateCommunicationPort();
     if (!NT_SUCCESS(status))

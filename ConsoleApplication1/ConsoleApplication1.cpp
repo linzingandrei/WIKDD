@@ -889,8 +889,6 @@ SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
     //__debugbreak();
 
     MY_CUSTOM_MESSAGE customMessage = { 0 };
-    customMessage.headers.MessageId = 1;
-    customMessage.headers.ReplyLength = sizeof(REPLY_DATA);
 	ULONG bytesReturned = 0;
 
     wcscpy_s(customMessage.replyData.message, sizeof(customMessage.replyData.message) / sizeof(WCHAR), message);
@@ -898,7 +896,34 @@ SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
 
 	printf("Sending message to driver: %S\n", customMessage.replyData.message);
 
-    return FilterSendMessage(port, &customMessage.replyData, sizeof(REPLY_DATA), NULL, 0, &bytesReturned);
+    return FilterSendMessage(port, &customMessage, sizeof(MY_CUSTOM_MESSAGE), NULL, 0, &bytesReturned);
+}
+
+DWORD WINAPI SendWorker(PVOID ctx)
+{
+    HANDLE port = (HANDLE)ctx;
+
+    while (true)
+    {
+        MY_CUSTOM_MESSAGE msg = { 0 };
+
+        HRESULT hr = FilterGetMessage(
+            port,
+            &msg.headers,
+            sizeof(msg),
+            NULL
+        );
+
+        if (!SUCCEEDED(hr))
+        {
+            printf("Something went wrong\n");
+            break;
+        }
+            
+        printf("Message: %S\n", msg.replyData.message);
+    }
+
+    return 0;
 }
 
 int main() {
@@ -915,286 +940,37 @@ int main() {
         return 1;
     }
 
-    WCHAR userInput[1024]; //= L"image";
+    //__debugbreak();
+
+    WCHAR userInput[1024] = { 0 };
     printf("Enter command: ");
 	scanf_s("%ls", userInput, (unsigned)_countof(userInput));
     //printf("Sending image to driver\n");
 
 	SendCustomMessageToDriver(port, userInput);
 
+	//printf("Image sent to driver\n");
+
+	MY_THREAD_POOL tp = { 0 };
+	MY_CONTEXT ctx = { 0 };
+
+    NTSTATUS status = TpInit(&tp, 5);
+    if (!NT_SUCCESS(status))
+    {
+    }
+    
+    InitializeSRWLock(&ctx.ContextLock);
+    ctx.Number = 0;
+
     //printf("Image sent to driver\n");
 
-    while (TRUE) {
-        //printf("Getting message\n");
-
-		ZeroMemory(&customMessage, sizeof(MY_CUSTOM_MESSAGE));
-
-        hr = FilterGetMessage(port, &customMessage.headers, sizeof(MY_CUSTOM_MESSAGE), NULL);
-
-        if (SUCCEEDED(hr)) {
-            printf("Message from kernel: %S\n", customMessage.replyData.message);
-            //printf("SUCCESS, file accessed\n");
-        }
-        else {
-            printf("Connection lost. Error 0x%X\n", hr);
-            break;
-        }
+    for (int i = 0; i < 5; i++)
+    {
+        TpEnqueueWorkItem(&tp, SendWorker, port);
     }
+
+    WaitForMultipleObjects(tp.NumberOfThreads, tp.ThreadHandles, TRUE, INFINITE);
 
     CloseHandle(port);
     return 0;
 }
-
-//int main()
-//{
-//    //WPP_INIT_TRACING(NULL);
-//
-//    char userInput[255] = { 0 };
-//
-//    MY_THREAD_POOL tp = { 0 };
-//    MY_CONTEXT ctx = { 0 };
-//    NTSTATUS status = STATUS_UNSUCCESSFUL;
-//
-//    while (true) {
-//        printf("> ");
-//    start_while:
-//        fgets(userInput, 255, stdin);
-//
-//        if (strncmp(userInput, "start", 5) == 0)
-//        {
-//            printf("ThreadPool started\n");
-//
-//            goto start_thread_pool;
-//        }
-//
-//        if (strncmp(userInput, "showproc", 8) == 0) 
-//        {
-//            printf("List of running processes:\n");
-//
-//            ListAllRunningProcesses();
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "initp", 5) == 0 || strncmp(userInput, "itp", 3) == 0)
-//        {
-//            char* p = strchr(userInput, ' ');
-//
-//            if (p == NULL) {
-//                Error("No space(s) in user input!");
-//
-//                userInput[0] = '\0';
-//                goto start_while;
-//            }
-//
-//            p += 1;
-//            int numberOfThreads = atoi(p);
-//
-//            //printf("%d\n", numberOfThreads);
-//
-//            if (numberOfThreads > 10000 || numberOfThreads <= 0) {
-//                Error("Choose another value for number of threads");
-//
-//                userInput[0] = '\0';
-//                goto start_while;
-//            }
-//
-//            DriverThreadPoolInit(numberOfThreads);
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "proctp", 6) == 0 || strncmp(userInput, "ptp", 3) == 0)
-//        {
-//            DriverThreadPoolProcess();
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "testp", 5) == 0 || strncmp(userInput, "ttp", 3) == 0)
-//        {
-//            DriverThreadPoolTest();
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "uninitp", 7) == 0 || strncmp(userInput, "utp", 3) == 0)
-//        {
-//            DriverThreadPoolUninit();
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "protect", 7) == 0 || strncmp(userInput, "prot", 4) == 0)
-//        {
-//            int* pidsToProtect = (int *)malloc(10 * sizeof(int));
-//            memset(pidsToProtect, 0, 10);
-//            int numberOfPidsToProtect = parseArguments(userInput, pidsToProtect);
-//            pidsToProtect[0] = numberOfPidsToProtect;
-//
-//            DriverProtectProcess(pidsToProtect);
-//
-//            free(pidsToProtect);
-//
-//            /*printf("PIDS: ");
-//            for (int i = 1; i < numberOfPidsToProtect; i++)
-//            {
-//                printf("%d ", pidsToProtect[i]);
-//            }
-//            printf("\n");*/
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "unprotect", 9) == 0 || strncmp(userInput, "uprot", 5) == 0)
-//        {
-//            int* pidsToUnprotect = (int*)malloc(10 * sizeof(int));
-//            memset(pidsToUnprotect, 0, 10);
-//            int numberOfPidsToUnprotect = parseArguments(userInput, pidsToUnprotect);
-//            pidsToUnprotect[0] = numberOfPidsToUnprotect;
-//
-//            DriverUnprotectProcess(pidsToUnprotect);
-//
-//            free(pidsToUnprotect);
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "clearprotect", 12) == 0 || strncmp(userInput, "cprot", 5) == 0)
-//        {
-//            DriverClearProtectProcess();
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "tprot", 5) == 0)
-//        {
-//            int pid = findPid(L"notepad.exe");
-//
-//            printf("Notepad.exe pid = %d\n", pid);
-//
-//            int* arr = (int*)malloc(2 * sizeof(int));
-//            memset(arr, 0, 2);
-//            arr[1] = pid;
-//            arr[0] = 2;
-//
-//            /*for (int i = 0; i < 2; i++)
-//            {
-//                printf("%d\n", arr[i]);
-//            }*/
-//
-//            DriverProtectProcess(arr);
-//
-//            free(arr);
-//
-//            printf("Notepad.exe should be protected now\n");
-//
-//            userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "tuprot", 6) == 0)
-//        {
-//            int pid = findPid(L"notepad.exe"); //for some reason Windows 11 has "Notepad.exe" and Windows 10 has "notepad.exe"
-//
-//            printf("Notepad.exe pid = %d\n", pid);
-//
-//            int* arr = (int*)malloc(2 * sizeof(int));
-//            memset(arr, 0, 2);
-//            arr[1] = pid;
-//            arr[0] = 2;
-//
-//            DriverUnprotectProcess(arr);
-//
-//            printf("Notepad.exe should be unprotected now\n");
-//
-//            userInput[0] = '\0';
-//        }
-//
-//         if (strncmp(userInput, "vaxproc", 7) == 0)
-//        {
-//             printf("Enter a program name (first manually open the program): ");
-//             WCHAR programName[100] = { 0 };
-//             wscanf_s(L"%ls", programName, 255);
-//
-//             //wprintf(L"%ls\n", programName);
-//
-//             int pid = findPid(programName);
-//
-//             printf("Notepad.exe pid = %d\n", pid);
-//
-//             int res = InjectThreadIntoGivenProcess(pid);
-//
-//             //DriverThreadInjectionDetection();
-//
-//             //printf("Notepad.exe should be unprotected now\n");
-//
-//             userInput[0] = '\0';
-//        }
-//
-//        if (strncmp(userInput, "exit", 4) == 0)
-//        {
-//            printf("Exiting...\n");
-//
-//            goto exit;
-//        }
-//
-//        if (strncmp(userInput, "help", 4) == 0)
-//        {
-//            printf("\"start\" to begin threadpool execution\n");
-//            printf("\"stop\" to stop threadpool execution\n");
-//            printf("\"exit\" to end program (can use only before starting threadpool)\n");
-//
-//            userInput[0] = '\0';
-//        }
-//    }
-//
-//start_thread_pool:
-//
-//    status = TpInit(&tp, 5);
-//    if (!NT_SUCCESS(status))
-//    {
-//        //TraceEvents(TRACE_LEVEL_ERROR, DBG_INIT, "App failed with status 0x%x\n", status);
-//        goto CleanUp;
-//    }
-//
-//    InitializeSRWLock(&ctx.ContextLock);
-//    ctx.Number = 0;
-//
-//    for (int i = 0; i < 2; ++i)
-//    {
-//        if (_kbhit())
-//        {
-//            fgets(userInput, sizeof(userInput), stdin);
-//
-//            if (strncmp(userInput, "stop", 4) == 0)
-//            {
-//                printf("ThreadPool stopped\n");
-//
-//                goto stop_thread_pool;
-//            }
-//        }
-//
-//        status = TpEnqueueWorkItem(&tp, TestThreadPoolRoutine, &ctx);
-//        if (!NT_SUCCESS(status))
-//        {
-//            //TraceEvents(TRACE_LEVEL_ERROR, DBG_INIT, "App failed with status 0x%x\n", status);
-//
-//            goto CleanUp;
-//        }
-//    }
-//
-//stop_thread_pool:
-//    TpUninit(&tp);
-//
-//    /* If everything went well, this should output 100.000.000. */
-//    printf("Final number value = %d \r\n", ctx.Number);
-//    //TraceEvents(TRACE_LEVEL_INFORMATION, DBG_INIT, "Success!");
-//
-//
-//CleanUp:
-//    _CrtDumpMemoryLeaks();
-//    //WPP_CLEANUP();
-//    return status;
-//exit:
-//    return 0;
-//}
