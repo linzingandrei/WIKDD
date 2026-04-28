@@ -198,12 +198,18 @@ PLoadImageNotifyRoutine(
     UNREFERENCED_PARAMETER(ProcessId);
     UNREFERENCED_PARAMETER(FullImageName);
 
-    __debugbreak();
+    //__debugbreak();
 
     /*if (!ImageInfo->SystemModeImage)
     {
         return;
     }*/
+
+    if (gClientPort == NULL)
+    {
+        DbgPrintEx(0, 0, "No client connected to receive messages.\n");
+        return;
+    }
 
     PIMAGE_INFO_EX imgInfo = CONTAINING_RECORD(ImageInfo, IMAGE_INFO_EX, ImageInfo);
 
@@ -220,31 +226,21 @@ PLoadImageNotifyRoutine(
 
         DbgPrintEx(0, 0, "Image file name: %wZ\n", &imageFileName);
 
-        ExFreePoolWithTag(imageFileName.Buffer, 'imN');
-
         MY_CUSTOM_MESSAGE msg = { 0 };
 
-        //wcscpy(msg.replyData.message, L"image");
-        wcscpy_s(msg.replyData.message, 1024, L"image");
-
+        //__debugbreak();
+        wcscpy_s(msg.replyData.message, 1024, imageFileName.Buffer);
         msg.replyData.messageLength = (ULONG)wcslen(msg.replyData.message) * sizeof(WCHAR);
 
-        if (!gClientPort)
-        {
-            return;
-        }
+        ExFreePoolWithTag(imageFileName.Buffer, 'imN');
+
+        //wcscpy(msg.replyData.message, L"image");
 
         LARGE_INTEGER timeout;
 
         timeout.QuadPart = -10 * 1000 * 1000;
 
         NTSTATUS status = STATUS_UNSUCCESSFUL;
-
-        if (gClientPort == NULL)
-        {
-            DbgPrintEx(0, 0, "No client connected to receive messages.\n");
-            return;
-		}
 
         status = FltSendMessage(
             gFilterRegistration,

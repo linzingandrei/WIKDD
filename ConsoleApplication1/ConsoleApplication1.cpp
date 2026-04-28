@@ -12,6 +12,7 @@
 #include <crtdbg.h>
 #include <conio.h>
 #include <psapi.h>
+#include "intrin.h"
 #include <tchar.h>
 #include <winioctl.h>
 #include "TlHelp32.h"
@@ -885,22 +886,26 @@ typedef struct _MY_CUSTOM_MESSAGE
 NTSTATUS
 SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
 {
-    BYTE buffer[sizeof(MY_CUSTOM_MESSAGE)];
-	PMY_CUSTOM_MESSAGE customMessage = (PMY_CUSTOM_MESSAGE)buffer;
-    ZeroMemory(&customMessage->headers, sizeof(FILTER_MESSAGE_HEADER));
+    //__debugbreak();
 
-    wcscpy_s(customMessage->replyData.message, 1024, message);
-    customMessage->replyData.messageLength = wcslen(customMessage->replyData.message) * sizeof(WCHAR);
-    return FilterSendMessage(port, &customMessage->replyData, sizeof(REPLY_DATA), NULL, 0, NULL);
+    MY_CUSTOM_MESSAGE customMessage = { 0 };
+    customMessage.headers.MessageId = 1;
+    customMessage.headers.ReplyLength = sizeof(REPLY_DATA);
+	ULONG bytesReturned = 0;
+
+    wcscpy_s(customMessage.replyData.message, sizeof(customMessage.replyData.message) / sizeof(WCHAR), message);
+    customMessage.replyData.messageLength = wcslen(customMessage.replyData.message) * sizeof(WCHAR);
+
+	printf("Sending message to driver: %S\n", customMessage.replyData.message);
+
+    return FilterSendMessage(port, &customMessage.replyData, sizeof(REPLY_DATA), NULL, 0, &bytesReturned);
 }
 
 int main() {
     HANDLE port;
     HRESULT hr;
 
-    BYTE buffer[sizeof(MY_CUSTOM_MESSAGE)];
-    PMY_CUSTOM_MESSAGE customMessage = (PMY_CUSTOM_MESSAGE)buffer;
-    ZeroMemory(&customMessage->headers, sizeof(FILTER_MESSAGE_HEADER));
+	MY_CUSTOM_MESSAGE customMessage = { 0 };
 
     printf("Connecting to driver...\n");
 
@@ -910,20 +915,24 @@ int main() {
         return 1;
     }
 
-    WCHAR userInput[1024];
-    //printf("Enter command: ");
-	//scanf_s("%ls", userInput, (unsigned)_countof(userInput));
-	SendCustomMessageToDriver(port, L"image");
+    WCHAR userInput[1024]; //= L"image";
+    printf("Enter command: ");
+	scanf_s("%ls", userInput, (unsigned)_countof(userInput));
+    //printf("Sending image to driver\n");
+
+	SendCustomMessageToDriver(port, userInput);
+
+    //printf("Image sent to driver\n");
 
     while (TRUE) {
-        printf("Getting message\n");
+        //printf("Getting message\n");
 
-		//ZeroMemory(buffer, sizeof(buffer));
+		ZeroMemory(&customMessage, sizeof(MY_CUSTOM_MESSAGE));
 
-        hr = FilterGetMessage(port, &customMessage->headers, sizeof(MY_CUSTOM_MESSAGE), NULL);
+        hr = FilterGetMessage(port, &customMessage.headers, sizeof(MY_CUSTOM_MESSAGE), NULL);
 
         if (SUCCEEDED(hr)) {
-            printf("File Accessed: %S\n", customMessage->replyData.message);
+            printf("Message from kernel: %S\n", customMessage.replyData.message);
             //printf("SUCCESS, file accessed\n");
         }
         else {
