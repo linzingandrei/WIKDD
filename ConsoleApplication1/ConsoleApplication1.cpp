@@ -899,7 +899,7 @@ SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
     return FilterSendMessage(port, &customMessage, sizeof(MY_CUSTOM_MESSAGE), NULL, 0, &bytesReturned);
 }
 
-DWORD WINAPI SendWorker(PVOID ctx)
+DWORD WINAPI GetWorker(PVOID ctx)
 {
     HANDLE port = (HANDLE)ctx;
 
@@ -966,7 +966,7 @@ int main() {
 
     for (int i = 0; i < 5; i++)
     {
-        TpEnqueueWorkItem(&tp, SendWorker, port);
+        TpEnqueueWorkItem(&tp, GetWorker, port);
     }
 
     WaitForMultipleObjects(tp.NumberOfThreads, tp.ThreadHandles, TRUE, INFINITE);

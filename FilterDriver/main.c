@@ -11,6 +11,8 @@ PFLT_PORT gServerPort = NULL;
 PFLT_PORT gClientPort = NULL;
 PDRIVER_OBJECT gDriverObject = NULL;
 
+KSPIN_LOCK gClientPortLock;
+
 BOOLEAN gProcessMonitoringEnabled = FALSE;
 BOOLEAN gImageMonitoringEnabled = FALSE;
 
@@ -106,13 +108,24 @@ ProcFltSendMessageProcessCreate(
 	UNREFERENCED_PARAMETER(CreateInfo);
 	UNREFERENCED_PARAMETER(ProcessId);
 
-    MY_CUSTOM_MESSAGE msg = { 0 };
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+
+    if (!msg)
+    {
+        return;
+    }
 
     LARGE_INTEGER timestamp;
     KeQuerySystemTime(&timestamp);
 
+    RtlZeroMemory(msg, sizeof(*msg));
+
     RtlStringCchPrintfW(
-        msg.replyData.message,
+        msg->replyData.message,
         1024,
         L"[%llu] [ProcessCreate] [%lu] Path=%wZ Cmd=%wZ",
         timestamp.QuadPart,
@@ -123,33 +136,9 @@ ProcFltSendMessageProcessCreate(
 
 	//wcscpy(msg.replyData.message, L"process");
 
-    msg.replyData.messageLength = (ULONG)wcslen(msg.replyData.message) * sizeof(WCHAR);
+    msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
 
-    if (!gClientPort)
-    {
-        return;
-	}
-
-    LARGE_INTEGER timeout;
-
-    timeout.QuadPart = -10 * 1000 * 1000;
-
-    NTSTATUS status = STATUS_UNSUCCESSFUL;
-
-    status = FltSendMessage(
-        gFilterRegistration,
-        &gClientPort,
-        &msg.replyData,
-        sizeof(REPLY_DATA),
-        NULL,
-        NULL,
-        &timeout
-    );
-
-    if (!NT_SUCCESS(status))
-    {
-        DbgPrintEx(0, 0, "Failed to send message to user-mode application. Status: 0x%X\n", status);
-    }
+    TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
 }
 
 static VOID
@@ -159,13 +148,29 @@ ProcFltSendMessageProcessTerminate(
 {
     UNREFERENCED_PARAMETER(ProcessId);
 
-    MY_CUSTOM_MESSAGE msg = { 0 };
+    if (!gClientPort)
+    {
+        return;
+    }
+
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+
+    if (!msg)
+    {
+        return;
+    }
 
     LARGE_INTEGER timestamp;
     KeQuerySystemTime(&timestamp);
 
+    RtlZeroMemory(msg, sizeof(*msg));
+
     RtlStringCchPrintfW(
-        msg.replyData.message,
+        msg->replyData.message,
         1024,
         L"[%llu] [ProcessTerminate] [%lu]",
         timestamp.QuadPart,
@@ -174,34 +179,9 @@ ProcFltSendMessageProcessTerminate(
 
     //wcscpy(msg.replyData.message, L"process");
 
-    msg.replyData.messageLength = (ULONG)wcslen(msg.replyData.message) * sizeof(WCHAR);
+    msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
 
-    if (!gClientPort)
-    {
-        return;
-    }
-
-    LARGE_INTEGER timeout;
-
-    timeout.QuadPart = -10 * 1000 * 1000;
-
-    NTSTATUS status = STATUS_UNSUCCESSFUL;
-
-    status = FltSendMessage(
-        gFilterRegistration,
-        &gClientPort,
-        &msg.replyData,
-        sizeof(REPLY_DATA),
-        NULL,
-        NULL,
-        &timeout
-    );
-
-    if (!NT_SUCCESS(status))
-    {
-        DbgPrintEx(0, 0, "Failed to send message to user-mode application. Status: 0x%X\n", status);
-    }
-
+    TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
 }
 
 VOID
@@ -289,7 +269,9 @@ PLoadImageNotifyRoutine(
         );
 
         if (!msg)
+        {
             return;
+        }
 
         RtlZeroMemory(msg, sizeof(*msg));
 
@@ -437,14 +419,21 @@ VOID SendWorker(PVOID ctx)
 {
     PMY_CUSTOM_MESSAGE msg = (PMY_CUSTOM_MESSAGE)ctx;
 
+    KIRQL oldIrql;
+    PFLT_PORT port = NULL;
+
+    KeAcquireSpinLock(&gClientPortLock, &oldIrql);
+    port = gClientPort;
+    KeReleaseSpinLock(&gClientPortLock, oldIrql);
+
     LARGE_INTEGER timeout;
     timeout.QuadPart = -10 * 1000 * 1000;
 
-    if (gClientPort)
+    if (port)
     {
         NTSTATUS status = FltSendMessage(
             gFilterRegistration,
-            &gClientPort,
+            &port,
             &msg->replyData,
             sizeof(REPLY_DATA),
             NULL,
@@ -585,6 +574,23 @@ FilterUnload(
 {
     WikddLogInfo("Unloading driver. Flags = 0x%x", Flags);
 
+    if (gImageMonitoringEnabled)
+    {
+        ImageFilterUninitialize();
+	}
+
+    if (gProcessMonitoringEnabled)
+    {
+        ProcessFilterUninitialize();
+	}
+
+    if (gThreadPool)
+    {
+        TpUninit(&gThreadPool->tp);
+        ExFreePoolWithTag(gThreadPool, 'ptmT');
+        gThreadPool = NULL;
+    }
+
     if (gServerPort)
     {
         FltCloseCommunicationPort(gServerPort);
@@ -595,13 +601,6 @@ FilterUnload(
     {
         FltUnregisterFilter(gFilterRegistration);
         WPP_CLEANUP(gDriverObject);
-    }
-
-    if (gThreadPool)
-    {
-        TpUninit(&gThreadPool->tp);
-        ExFreePoolWithTag(gThreadPool, 'ptmT');
-        gThreadPool = NULL;
     }
 
     return STATUS_SUCCESS;
@@ -656,6 +655,7 @@ DriverEntry(
     if (!NT_SUCCESS(status))
     {
         WikddLogApiFailedNt(status, "PsSetCreateProcessNotifyRoutineEx");
+        ProcessFilterUninitialize();
         FltUnregisterFilter(gFilterRegistration);
         WPP_CLEANUP(gDriverObject);
         return status;
@@ -664,6 +664,8 @@ DriverEntry(
     status = ImageFilterInitialize();
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(0, 0, "Failed to create load image notify routine (0x%08X)\n", status);
+        ImageFilterUninitialize();
+		FltUnregisterFilter(gFilterRegistration);
         return status;
     }
 
