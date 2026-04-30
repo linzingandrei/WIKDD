@@ -291,7 +291,7 @@ ThreadFilterNotifyRoutine(
         RtlStringCchPrintfW(
             msg->replyData.message,
             1024,
-            L"[Thread]Path=%wZ",
+            L"[Thread]Path=%wZ\r\n",
             pProcessPath
         );
 
@@ -576,7 +576,7 @@ CmRegistryCallback(
         status = CmCallbackGetKeyObjectIDEx(&gRegistryCookie, object, &objectId, &objectName, 0);
         if (!NT_SUCCESS(status))
         {
-            DbgPrint("CmCallbackGetKeyObjectIDEx failed with status = 0x%X\n", status);
+            DbgPrint("CmCallbackGetKeyObjectIDEx failed with status = 0x%X\r\n", status);
         }
         else
         {
@@ -599,7 +599,7 @@ CmRegistryCallback(
             RtlStringCchPrintfW(
                 msg->replyData.message,
                 1024,
-                L"[RegistryKey] Key=%wZ",
+                L"[RegistryKey] Key=%wZ\r\n",
                 objectName
             );
 
@@ -660,7 +660,7 @@ ProcFltSendMessageProcessCreate(
     RtlStringCchPrintfW(
         msg->replyData.message,
         1024,
-        L"[%llu] [ProcessCreate] [%lu] Path=%wZ Cmd=%wZ",
+        L"[%llu] [ProcessCreate] [%lu] Path=%wZ Cmd=%wZ\r\n",
         timestamp.QuadPart,
         HandleToULong(ProcessId),
         CreateInfo->ImageFileName,
@@ -705,7 +705,7 @@ ProcFltSendMessageProcessTerminate(
     RtlStringCchPrintfW(
         msg->replyData.message,
         1024,
-        L"[%llu] [ProcessTerminate] [%lu]",
+        L"[%llu] [ProcessTerminate] [%lu]\r\n",
         timestamp.QuadPart,
         HandleToULong(ProcessId)
     );
@@ -785,16 +785,16 @@ PLoadImageNotifyRoutine(
     PIMAGE_INFO_EX imgInfo = CONTAINING_RECORD(ImageInfo, IMAGE_INFO_EX, ImageInfo);
 
     UNICODE_STRING imageFileName;
-    imageFileName.Length = imgInfo->FileObject->FileName.Length;
-    imageFileName.MaximumLength = imgInfo->FileObject->FileName.MaximumLength;
-    imageFileName.Buffer = ExAllocatePool2(POOL_FLAG_PAGED, imageFileName.MaximumLength, 'imN');
+    RtlInitUnicodeString(&imageFileName, imgInfo->FileObject->FileName.Buffer);
+    //imageFileName->Length = imgInfo->FileObject->FileName.Length;
+    //imageFileName->MaximumLength = imgInfo->FileObject->FileName.MaximumLength;
+    //imageFileName->Buffer = ExAllocatePool2(POOL_FLAG_PAGED, imageFileName->MaximumLength, 'imN');
 
     if (imageFileName.Buffer != NULL)
     {
         //__debugbreak();
 
-        RtlCopyMemory(imageFileName.Buffer, imgInfo->FileObject->FileName.Buffer, imageFileName.Length);
-
+        //RtlCopyMemory(imageFileName->Buffer, imgInfo->FileObject->FileName.Buffer, imageFileName->Length);
         PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
             POOL_FLAG_NON_PAGED,
             sizeof(MY_CUSTOM_MESSAGE),
@@ -806,9 +806,21 @@ PLoadImageNotifyRoutine(
             return;
         }
 
+        LARGE_INTEGER timestamp;
+        KeQuerySystemTime(&timestamp);
+
         RtlZeroMemory(msg, sizeof(*msg));
 
-        wcscpy_s(msg->replyData.message, 1024, imageFileName.Buffer);
+        RtlStringCchPrintfW(
+            msg->replyData.message,
+            1024,
+            L"[%llu] [ImageLoad] [%wZ]\r\n",
+            timestamp.QuadPart,
+            imageFileName
+            //HandleToULong(ProcessId)
+        );
+
+        //wcscpy(msg.replyData.message, L"process");
 
         msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
 

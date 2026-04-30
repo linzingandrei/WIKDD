@@ -883,6 +883,9 @@ typedef struct _MY_CUSTOM_MESSAGE
 
 } MY_CUSTOM_MESSAGE, * PMY_CUSTOM_MESSAGE;
 
+SRWLOCK fLock;
+HANDLE hFile;
+
 NTSTATUS
 SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
 {
@@ -916,11 +919,16 @@ DWORD WINAPI GetWorker(PVOID ctx)
 
         if (!SUCCEEDED(hr))
         {
-            printf("Something went wrong\n");
+			AcquireSRWLockExclusive(&fLock);
+            WriteFile(hFile, "Something went wrong\n", sizeof("Something went wrong\n") - 1, NULL, NULL);
+			ReleaseSRWLockExclusive(&fLock);
+
             break;
         }
-            
-        printf("Message: %S\n", msg.replyData.message);
+         
+		AcquireSRWLockExclusive(&fLock);
+		WriteFile(hFile, msg.replyData.message, msg.replyData.messageLength, NULL, NULL);
+		ReleaseSRWLockExclusive(&fLock);
     }
 
     return 0;
@@ -940,6 +948,10 @@ int main() {
         return 1;
     }
 
+
+    InitializeSRWLock(&fLock);
+    hFile = CreateFileA("output.txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
     //__debugbreak();
 
     WCHAR userInput[1024] = { 0 };
@@ -952,15 +964,15 @@ int main() {
 	//printf("Image sent to driver\n");
 
 	MY_THREAD_POOL tp = { 0 };
-	MY_CONTEXT ctx = { 0 };
+	//MY_CONTEXT ctx = { 0 };
 
     NTSTATUS status = TpInit(&tp, 5);
     if (!NT_SUCCESS(status))
     {
     }
     
-    InitializeSRWLock(&ctx.ContextLock);
-    ctx.Number = 0;
+    //InitializeSRWLock(&ctx.ContextLock);
+    //ctx.Number = 0;
 
     //printf("Image sent to driver\n");
 
