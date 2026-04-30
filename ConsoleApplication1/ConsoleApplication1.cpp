@@ -934,6 +934,23 @@ DWORD WINAPI GetWorker(PVOID ctx)
     return 0;
 }
 
+DWORD WINAPI CommunicationWithDriver(PVOID ctx)
+{
+    HANDLE port = (HANDLE)ctx;
+    while (true)
+    {
+        WCHAR userInput[1024] = { 0 };
+        printf("Enter command: ");
+        scanf_s("%ls", userInput, (unsigned)_countof(userInput));
+
+        SendCustomMessageToDriver(port, userInput);
+
+        userInput[0] = '\0';
+    }
+
+    return 0;
+}
+
 int main() {
     HANDLE port;
     HRESULT hr;
@@ -950,16 +967,18 @@ int main() {
 
 
     InitializeSRWLock(&fLock);
-    hFile = CreateFileA("output.txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    hFile = CreateFileA("output.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
     //__debugbreak();
 
-    WCHAR userInput[1024] = { 0 };
-    printf("Enter command: ");
-	scanf_s("%ls", userInput, (unsigned)_countof(userInput));
+    //WCHAR userInput[1024] = { 0 };
+    //printf("Enter command: ");
+	//scanf_s("%ls", userInput, (unsigned)_countof(userInput));
     //printf("Sending image to driver\n");
 
-	SendCustomMessageToDriver(port, userInput);
+	CreateThread(NULL, 0, CommunicationWithDriver, port, 0, NULL);
+
+	//SendCustomMessageToDriver(port, userInput);
 
 	//printf("Image sent to driver\n");
 

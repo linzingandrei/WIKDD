@@ -271,7 +271,7 @@ ThreadFilterNotifyRoutine(
             DbgPrint("GetCurrentProcessImagePath failed with status 0x%X\n", status);
             __leave;
         }
-
+        
         PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
             POOL_FLAG_NON_PAGED,
             sizeof(MY_CUSTOM_MESSAGE),
@@ -898,32 +898,103 @@ DisconnectNotifyCallback(
     }
 }
 
+wchar_t* FindNextToken(wchar_t* str, wchar_t delimiter)
+{
+    while (*str && *str != delimiter)
+        str++;
+
+    if (*str == delimiter)
+        *str++ = L'\0';
+
+    return str;
+}
+
 VOID
-HandleUserMessage(const WCHAR* message, ULONG messageLength)
+HandleUserMessage(WCHAR* message, ULONG messageLength)
 {
     UNREFERENCED_PARAMETER(message);
     UNREFERENCED_PARAMETER(messageLength);
 
     __debugbreak();
+    
+    BOOLEAN processMonitoringFlag = FALSE;
+	BOOLEAN imageMonitoringFlag = FALSE;
+    BOOLEAN threadMonitoringFlag = FALSE;
+	BOOLEAN registryMonitoringFlag = FALSE;
 
-	if (wcsncmp(message, L"process", messageLength / sizeof(WCHAR)) == 0)
+    WCHAR* current = message;
+
+    while (*current)
     {
-		gProcessMonitoringEnabled = TRUE;
+		WCHAR* next = FindNextToken(current, L' ');
+
+        if (wcsncmp(current, L"process", wcslen(L"process")) == 0)
+        {
+            processMonitoringFlag = TRUE;
+        }
+        else if (wcsncmp(current, L"image", wcslen(L"image")) == 0)
+        {
+            imageMonitoringFlag = TRUE;
+        }
+        else if (wcsncmp(current, L"thread", wcslen(L"thread")) == 0)
+        {
+            threadMonitoringFlag = TRUE;
+        }
+        else if (wcsncmp(current, L"registry", wcslen(L"registry")) == 0)
+        {
+            registryMonitoringFlag = TRUE;
+        }
+
+        current = next;
     }
 
-    if (wcsncmp(message, L"image", messageLength / sizeof(WCHAR)) == 0)
+	if (processMonitoringFlag)
     {
-        gImageMonitoringEnabled = TRUE;
+        if (gProcessMonitoringEnabled == FALSE)
+        {
+            gProcessMonitoringEnabled = TRUE;
+        }
+        else
+        {
+			gProcessMonitoringEnabled = FALSE;
+        }
     }
 
-    if (wcsncmp(message, L"thread", messageLength / sizeof(WCHAR)) == 0)
+
+    if (imageMonitoringFlag)
     {
-        gThreadMonitoringEnabled = TRUE;
+        if (gImageMonitoringEnabled == FALSE)
+        {
+            gImageMonitoringEnabled = TRUE;
+        }
+        else
+        {
+            gImageMonitoringEnabled = FALSE;
+		}
     }
 
-    if (wcsncmp(message, L"registry", messageLength / sizeof(WCHAR)) == 0)
+    if (threadMonitoringFlag)
     {
-        gRegistryMonitoringEnabled = TRUE;
+        if (gThreadMonitoringEnabled == FALSE)
+        {
+            gThreadMonitoringEnabled = TRUE;
+        }
+        else
+        {
+            gThreadMonitoringEnabled = FALSE;
+		}
+    }
+
+    if (registryMonitoringFlag)
+    {
+        if (gRegistryMonitoringEnabled == FALSE)
+        {
+            gRegistryMonitoringEnabled = TRUE;
+        }
+        else
+        {
+            gRegistryMonitoringEnabled = FALSE;
+        }
     }
 }
 
