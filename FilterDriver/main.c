@@ -77,6 +77,10 @@ typedef struct _MY_PREPOST_CONTEXT {
     LONGLONG oldSize;
 } MY_PREPOST_CONTEXT, * PMY_PREPOST_CONTEXT;
 
+typedef struct _REG_RENAME_CONTEXT {
+    UNICODE_STRING OldName;
+} REG_RENAME_CONTEXT, * PREG_RENAME_CONTEXT;
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
 * Prototypes
@@ -514,6 +518,7 @@ CmRegistryCallback(
 
     REG_NOTIFY_CLASS regNotifyClass = (REG_NOTIFY_CLASS)(SIZE_T)Argument1;
     PVOID pParameters = Argument2;
+    PREG_QUERY_VALUE_KEY_INFORMATION info = (PREG_QUERY_VALUE_KEY_INFORMATION)Argument2;
     PVOID object = NULL;
 
     if (!gRegistryMonitoringEnabled)
@@ -737,14 +742,81 @@ CmRegistryCallback(
             UNICODE_STRING regOperationString;
             RtlInitUnicodeString(&regOperationString, regOperation);
 
-            RtlStringCchPrintfW(
-                msg->replyData.message,
-                1024,
-                L"[%llu] [%wZ] Key=%wZ\r\n",
-				timestamp.QuadPart,
-                &regOperationString,
-                objectName
+            //__debugbreak();
+
+            //ULONG resultLength = 0;
+     /*       PKEY_VALUE_PARTIAL_INFORMATION kvInfo = NULL;
+
+            HANDLE keyHandle = NULL;
+            status = ObOpenObjectByPointer(object, OBJ_KERNEL_HANDLE, NULL, KEY_QUERY_VALUE, NULL, KernelMode, &keyHandle);
+            if (!NT_SUCCESS(status))
+            {
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            __debugbreak();
+
+            ULONG bufferLength = 1024;
+            kvInfo = ExAllocatePool2(
+                POOL_FLAG_NON_PAGED, 
+                bufferLength, 
+                'keyV'
             );
+            if (!kvInfo)
+            {
+                return STATUS_UNSUCCESSFUL;
+            }
+
+            status = ZwQueryValueKey(
+                keyHandle,
+                objectName,
+                KeyValuePartialInformation,
+                kvInfo,
+                bufferLength,
+                &bufferLength
+            );*/
+           /* if (!NT_SUCCESS(status))
+            {
+                return STATUS_UNSUCCESSFUL;
+            }*/
+           
+            if (regNotifyClass == RegNtPreSetValueKey || regNotifyClass == RegNtPostSetValueKey)
+            {
+                //__debugbreak();
+
+                if (info->ValueName)
+                {
+                    status = RtlStringCchPrintfW(
+                        msg->replyData.message,
+                        1024,
+                        L"[%llu] [%wZ] [Key=%wZ] [Value=%wZ]\r\n",
+                        timestamp.QuadPart,
+                        &regOperationString,
+                        objectName,
+                        info->ValueName
+                        //&kvInfo->Data
+                    );
+                }
+            }
+            else
+            {
+                status = RtlStringCchPrintfW(
+                    msg->replyData.message,
+                    1024,
+                    L"[%llu] [%wZ] [Key=%wZ]\r\n",
+                    timestamp.QuadPart,
+                    &regOperationString,
+                    objectName
+                    //&kvInfo->Data
+                );
+            }
+
+            if (!NT_SUCCESS(status))
+            {
+                return STATUS_UNSUCCESSFUL;
+            }
+
+			//ExFreePoolWithTag(kvInfo, 'keyV');
 
             //wcscpy(msg.replyData.message, L"process");
 
@@ -2083,7 +2155,7 @@ HandleUserMessage(WCHAR* message, ULONG messageLength)
     UNREFERENCED_PARAMETER(message);
     UNREFERENCED_PARAMETER(messageLength);
 
-    __debugbreak();
+    //__debugbreak();
     
     BOOLEAN processMonitoringFlag = FALSE;
 	BOOLEAN imageMonitoringFlag = FALSE;
@@ -2197,7 +2269,7 @@ MessageNotifyCallback(
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(OutputBuffer);
 
-    __debugbreak();
+    //__debugbreak();
 
     UNREFERENCED_PARAMETER(PortCookie);
 
