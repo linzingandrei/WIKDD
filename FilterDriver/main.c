@@ -69,6 +69,11 @@ NTSTATUS
 
 PFUNC_ZwQueryInformationProcess pfnZwQueryInformationProcess;
 
+typedef struct _MY_PREPOST_CONTEXT {
+    LARGE_INTEGER timestamp;
+    UNICODE_STRING fileName;
+} MY_PREPOST_CONTEXT, * PMY_PREPOST_CONTEXT;
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
 * Prototypes
@@ -113,6 +118,74 @@ FilterUnload(
 
 VOID SendWorker(
     PVOID ctx
+);
+
+FLT_POSTOP_CALLBACK_STATUS
+PostCreate(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+);
+
+FLT_PREOP_CALLBACK_STATUS
+PreClose(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+);
+
+FLT_POSTOP_CALLBACK_STATUS
+PostClose(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+);
+
+FLT_PREOP_CALLBACK_STATUS
+PreCleanup(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+);
+
+FLT_POSTOP_CALLBACK_STATUS
+PostCleanup(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+);
+
+FLT_PREOP_CALLBACK_STATUS
+PreRead(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+);
+
+FLT_POSTOP_CALLBACK_STATUS
+PostRead(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+);
+
+FLT_PREOP_CALLBACK_STATUS
+PreWrite(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+);
+
+FLT_POSTOP_CALLBACK_STATUS
+PostWrite(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
 );
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -918,9 +991,15 @@ ImageFilterUninitialize()
 */
 
 CONST FLT_OPERATION_REGISTRATION callbacks[] = {
-    { IRP_MJ_CREATE, 0, PreCreate, NULL },
+    { IRP_MJ_CREATE, 0, PreCreate, PostCreate },
 
-    //{ IRP_MJ_CLOSE, 0, , NULL },
+    { IRP_MJ_CLOSE, 0, PreClose, PostClose },
+    { IRP_MJ_CLEANUP, 0, PreCleanup, PostCleanup },
+
+    { IRP_MJ_READ, 0, PreRead, PostRead },
+    { IRP_MJ_WRITE, 0, PreWrite, PostWrite },
+
+    { IRP_MJ_SET_INFORMATION, 0, NULL, NULL },
 
     { IRP_MJ_OPERATION_END }
 };
@@ -929,64 +1008,744 @@ FLT_PREOP_CALLBACK_STATUS
 PreCreate(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Out_ PVOID* Buffer
+    _Out_ PVOID* CompletionContext
 )
 {
     UNREFERENCED_PARAMETER(FltObjects);
-    UNREFERENCED_PARAMETER(Buffer);
 
     if (!gClientPort || !gFileMonitoringEnabled)
     {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    PMY_PREPOST_CONTEXT context = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_PREPOST_CONTEXT),
+        'flT'
+    );
+    if (!context)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
 
+    KeQuerySystemTime(&context->timestamp);
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
     if (NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
     {
-        //__debugbreak();
-
         FltParseFileNameInformation(nameInfo);
 
-        PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        context->fileName.Buffer = ExAllocatePool2(
             POOL_FLAG_NON_PAGED,
-            sizeof(MY_CUSTOM_MESSAGE),
-            'gsmT'
+            nameInfo->Name.Length,
+            'flTb'
         );
 
-        if (!msg)
+        if (context->fileName.Buffer)
         {
-			WikddLogError("Failed to allocate memory for message.");
-            return FLT_PREOP_COMPLETE;
+            RtlCopyMemory(
+                context->fileName.Buffer,
+                nameInfo->Name.Buffer,
+                nameInfo->Name.Length
+            );
+            context->fileName.Length = nameInfo->Name.Length;
+            context->fileName.MaximumLength = nameInfo->Name.Length;
         }
 
-        LARGE_INTEGER timestamp;
-        KeQuerySystemTime(&timestamp);
+        FltReleaseFileNameInformation(nameInfo);
+    }
+    else
+    {
+        context->fileName.Buffer = NULL;
+        context->fileName.Length = 0;
+        context->fileName.MaximumLength = 0;
+    }
 
+    *CompletionContext = context;
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+PostCreate(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    PMY_PREPOST_CONTEXT context = (PMY_PREPOST_CONTEXT)CompletionContext;
+    if (!context)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    NTSTATUS status = Data->IoStatus.Status;
+    //ULONG_PTR bytesWritten = Data->IoStatus.Information;
+
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+    if (msg)
+    {
         RtlZeroMemory(msg, sizeof(*msg));
-
-        UNICODE_STRING fileName;
-        RtlInitUnicodeString(&fileName, nameInfo->Name.Buffer);
-
         RtlStringCchPrintfW(
             msg->replyData.message,
             1024,
-            L"[%llu] [CreateFile] [%wZ]\r\n",
-            timestamp.QuadPart,
-            &fileName
-            //HandleToULong(ProcessId)
+            L"[%llu] [CreateFile] [%wZ] [Status: %ws]\r\n",
+            context->timestamp.QuadPart,
+            &context->fileName,
+			status == STATUS_SUCCESS ? L"Success\0" : L"Failure\0"
+            //bytesWritten
         );
-
-        FltReleaseFileNameInformation(nameInfo);
-
-        //wcscpy(msg.replyData.message, L"process");
-
         msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
-
         TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
     }
 
-    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    if (context->fileName.Buffer)
+    {
+        ExFreePoolWithTag(context->fileName.Buffer, 'flTb');
+    }
+    ExFreePoolWithTag(context, 'flT');
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+PreClose(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    //__debugbreak();
+
+    PMY_PREPOST_CONTEXT context = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_PREPOST_CONTEXT),
+        'flT'
+    );
+    if (!context)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    KeQuerySystemTime(&context->timestamp);
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    if (NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
+    {
+        FltParseFileNameInformation(nameInfo);
+
+        context->fileName.Buffer = ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            nameInfo->Name.Length,
+            'flTb'
+        );
+
+        if (context->fileName.Buffer)
+        {
+            RtlCopyMemory(
+                context->fileName.Buffer,
+                nameInfo->Name.Buffer,
+                nameInfo->Name.Length
+            );
+            context->fileName.Length = nameInfo->Name.Length;
+            context->fileName.MaximumLength = nameInfo->Name.Length;
+        }
+
+        FltReleaseFileNameInformation(nameInfo);
+    }
+    else
+    {
+        context->fileName.Buffer = NULL;
+        context->fileName.Length = 0;
+        context->fileName.MaximumLength = 0;
+    }
+
+    *CompletionContext = context;
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+SafeCloseCallback(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    PMY_PREPOST_CONTEXT context = (PMY_PREPOST_CONTEXT)CompletionContext;
+    if (!context)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    NTSTATUS status = Data->IoStatus.Status;
+    //ULONG_PTR bytesWritten = Data->IoStatus.Information;
+
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+    if (msg)
+    {
+        RtlZeroMemory(msg, sizeof(*msg));
+        RtlStringCchPrintfW(
+            msg->replyData.message,
+            1024,
+            L"[%llu] [CloseFile] [%wZ] [Status: %ws]\r\n",
+            context->timestamp.QuadPart,
+            &context->fileName,
+            status == STATUS_SUCCESS ? L"Success\0" : L"Failure\0"
+            //bytesWritten
+        );
+        msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
+        TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
+    }
+
+    if (context->fileName.Buffer)
+    {
+        ExFreePoolWithTag(context->fileName.Buffer, 'flTb');
+    }
+    ExFreePoolWithTag(context, 'flT');
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+PostClose(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+){
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    FLT_POSTOP_CALLBACK_STATUS returnStatus = FLT_POSTOP_FINISHED_PROCESSING;
+    FltDoCompletionProcessingWhenSafe(
+        Data,
+        FltObjects,
+        CompletionContext,
+        Flags,
+        SafeCloseCallback,
+        &returnStatus
+    );
+
+	return returnStatus;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+PreCleanup(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    //__debugbreak();
+
+    PMY_PREPOST_CONTEXT context = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_PREPOST_CONTEXT),
+        'flT'
+    );
+    if (!context)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    KeQuerySystemTime(&context->timestamp);
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    if (NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
+    {
+        FltParseFileNameInformation(nameInfo);
+
+        context->fileName.Buffer = ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            nameInfo->Name.Length,
+            'flTb'
+        );
+
+        if (context->fileName.Buffer)
+        {
+            RtlCopyMemory(
+                context->fileName.Buffer,
+                nameInfo->Name.Buffer,
+                nameInfo->Name.Length
+            );
+            context->fileName.Length = nameInfo->Name.Length;
+            context->fileName.MaximumLength = nameInfo->Name.Length;
+        }
+
+        FltReleaseFileNameInformation(nameInfo);
+    }
+    else
+    {
+        context->fileName.Buffer = NULL;
+        context->fileName.Length = 0;
+        context->fileName.MaximumLength = 0;
+    }
+
+    *CompletionContext = context;
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+SafeCleanupCallback(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    PMY_PREPOST_CONTEXT context = (PMY_PREPOST_CONTEXT)CompletionContext;
+    if (!context)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    NTSTATUS status = Data->IoStatus.Status;
+    //ULONG_PTR bytesWritten = Data->IoStatus.Information;
+
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+    if (msg)
+    {
+        RtlZeroMemory(msg, sizeof(*msg));
+        RtlStringCchPrintfW(
+            msg->replyData.message,
+            1024,
+            L"[%llu] [CleanupFile] [%wZ] [Status: %ws]\r\n",
+            context->timestamp.QuadPart,
+            &context->fileName,
+            status == STATUS_SUCCESS ? L"Success\0" : L"Failure\0"
+            //bytesWritten
+        );
+        msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
+        TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
+    }
+
+    if (context->fileName.Buffer)
+    {
+        ExFreePoolWithTag(context->fileName.Buffer, 'flTb');
+    }
+    ExFreePoolWithTag(context, 'flT');
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+PostCleanup(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+) {
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    FLT_POSTOP_CALLBACK_STATUS returnStatus = FLT_POSTOP_FINISHED_PROCESSING;
+    FltDoCompletionProcessingWhenSafe(
+        Data,
+        FltObjects,
+        CompletionContext,
+        Flags,
+        SafeCleanupCallback,
+        &returnStatus
+    );
+
+    return returnStatus;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+PreRead(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    //__debugbreak();
+
+    PMY_PREPOST_CONTEXT context = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_PREPOST_CONTEXT),
+        'flT'
+    );
+    if (!context)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    KeQuerySystemTime(&context->timestamp);
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    if (NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
+    {
+        FltParseFileNameInformation(nameInfo);
+
+        context->fileName.Buffer = ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            nameInfo->Name.Length,
+            'flTb'
+        );
+
+        if (context->fileName.Buffer)
+        {
+            RtlCopyMemory(
+                context->fileName.Buffer,
+                nameInfo->Name.Buffer,
+                nameInfo->Name.Length
+            );
+            context->fileName.Length = nameInfo->Name.Length;
+            context->fileName.MaximumLength = nameInfo->Name.Length;
+        }
+
+        FltReleaseFileNameInformation(nameInfo);
+    }
+    else
+    {
+        context->fileName.Buffer = NULL;
+        context->fileName.Length = 0;
+        context->fileName.MaximumLength = 0;
+    }
+
+    *CompletionContext = context;
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+SafeReadCallback(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    //__debugbreak();
+
+    PMY_PREPOST_CONTEXT context = (PMY_PREPOST_CONTEXT)CompletionContext;
+    if (!context)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    NTSTATUS status = Data->IoStatus.Status;
+    ULONG_PTR bytesWritten = Data->IoStatus.Information;
+
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+    if (msg)
+    {
+        RtlZeroMemory(msg, sizeof(*msg));
+        RtlStringCchPrintfW(
+            msg->replyData.message,
+            1024,
+            L"[%llu] [ReadFile] [%wZ] [Status: %ws] [Bytes: %llu]\r\n",
+            context->timestamp.QuadPart,
+            &context->fileName,
+            status == STATUS_SUCCESS ? L"Success\0" : L"Failure\0",
+            bytesWritten
+        );
+        msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
+        TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
+    }
+
+    if (context->fileName.Buffer)
+    {
+        ExFreePoolWithTag(context->fileName.Buffer, 'flTb');
+    }
+    ExFreePoolWithTag(context, 'flT');
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+PostRead(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+) {
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    FLT_POSTOP_CALLBACK_STATUS returnStatus = FLT_POSTOP_FINISHED_PROCESSING;
+    FltDoCompletionProcessingWhenSafe(
+        Data,
+        FltObjects,
+        CompletionContext,
+        Flags,
+        SafeReadCallback,
+        &returnStatus
+    );
+
+    return returnStatus;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+PreWrite(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* CompletionContext
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    //__debugbreak();
+
+    PMY_PREPOST_CONTEXT context = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_PREPOST_CONTEXT),
+        'flT'
+    );
+    if (!context)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    KeQuerySystemTime(&context->timestamp);
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    if (NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
+    {
+        FltParseFileNameInformation(nameInfo);
+
+        context->fileName.Buffer = ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            nameInfo->Name.Length,
+            'flTb'
+        );
+
+        if (context->fileName.Buffer)
+        {
+            RtlCopyMemory(
+                context->fileName.Buffer,
+                nameInfo->Name.Buffer,
+                nameInfo->Name.Length
+            );
+            context->fileName.Length = nameInfo->Name.Length;
+            context->fileName.MaximumLength = nameInfo->Name.Length;
+        }
+
+        FltReleaseFileNameInformation(nameInfo);
+    }
+    else
+    {
+        context->fileName.Buffer = NULL;
+        context->fileName.Length = 0;
+        context->fileName.MaximumLength = 0;
+    }
+
+    *CompletionContext = context;
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+SafeWriteCallback(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    //__debugbreak();
+
+    PMY_PREPOST_CONTEXT context = (PMY_PREPOST_CONTEXT)CompletionContext;
+    if (!context)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    NTSTATUS status = Data->IoStatus.Status;
+    ULONG_PTR bytesWritten = Data->IoStatus.Information;
+
+    PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+        POOL_FLAG_NON_PAGED,
+        sizeof(MY_CUSTOM_MESSAGE),
+        'gsmT'
+    );
+    if (msg)
+    {
+        RtlZeroMemory(msg, sizeof(*msg));
+        RtlStringCchPrintfW(
+            msg->replyData.message,
+            1024,
+            L"[%llu] [WriteFile] [%wZ] [Status: %ws] [Bytes: %llu]\r\n",
+            context->timestamp.QuadPart,
+            &context->fileName,
+            status == STATUS_SUCCESS ? L"Success\0" : L"Failure\0",
+            bytesWritten
+        );
+        msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
+        TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
+    }
+
+    if (context->fileName.Buffer)
+    {
+        ExFreePoolWithTag(context->fileName.Buffer, 'flTb');
+    }
+    ExFreePoolWithTag(context, 'flT');
+
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_POSTOP_CALLBACK_STATUS
+PostWrite(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+) {
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //__debugbreak();
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    FLT_POSTOP_CALLBACK_STATUS returnStatus = FLT_POSTOP_FINISHED_PROCESSING;
+    FltDoCompletionProcessingWhenSafe(
+        Data,
+        FltObjects,
+        CompletionContext,
+        Flags,
+        SafeWriteCallback,
+        &returnStatus
+    );
+
+    return returnStatus;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
