@@ -23,6 +23,7 @@ BOOLEAN gProcessMonitoringEnabled = FALSE;
 BOOLEAN gImageMonitoringEnabled = FALSE;
 BOOLEAN gThreadMonitoringEnabled = FALSE;
 BOOLEAN gRegistryMonitoringEnabled = FALSE;
+BOOLEAN gFileMonitoringEnabled = FALSE;
 
 DRIVER_INITIALIZE DriverEntry;
 
@@ -131,6 +132,7 @@ GetImagePathFromOpenHandle(
 
     __try
     {
+        //__debugbreak();
         // get the size of the process name
         status = pfnZwQueryInformationProcess(hProcess,
             ProcessImageFileName, NULL,
@@ -141,7 +143,7 @@ GetImagePathFromOpenHandle(
         }
 
         // allocate required space
-        pProcessPath = (PUNICODE_STRING)ExAllocatePool2(NonPagedPool,
+        pProcessPath = (PUNICODE_STRING)ExAllocatePool2(POOL_FLAG_NON_PAGED,
             dwObjectNameSize, UTILS_TAG_UNICODE_STRING);
         if (!pProcessPath)
         {
@@ -265,11 +267,15 @@ ThreadFilterNotifyRoutine(
     NTSTATUS status = STATUS_UNSUCCESSFUL;
     __try
     {
-        status = GetImagePathFromPid(ProcessId, &pProcessPath);
-        if (!NT_SUCCESS(status))
-        {
-            DbgPrint("GetCurrentProcessImagePath failed with status 0x%X\n", status);
-            __leave;
+        //__debugbreak();
+        if (Create) {
+            //__debugbreak();
+            status = GetImagePathFromPid(ProcessId, &pProcessPath);
+            if (!NT_SUCCESS(status))
+            {
+                DbgPrint("GetCurrentProcessImagePath failed with status 0x%X\n", status);
+                __leave;
+            }
         }
         
         PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
@@ -288,12 +294,29 @@ ThreadFilterNotifyRoutine(
 
         RtlZeroMemory(msg, sizeof(*msg));
 
-        RtlStringCchPrintfW(
-            msg->replyData.message,
-            1024,
-            L"[Thread]Path=%wZ\r\n",
-            pProcessPath
-        );
+        if (Create) {
+            RtlStringCchPrintfW(
+                msg->replyData.message,
+                1024,
+                L"[%llu] [ThreadCreate] [%lu] [Path: %ws] [Status: %ws]\r\n",
+                timestamp.QuadPart,
+                HandleToULong(ThreadId),
+                pProcessPath->Buffer,
+                NT_SUCCESS(status) ? L"Success" : L"Failure"
+            );
+        }
+        else
+        {
+            RtlStringCchPrintfW(
+                msg->replyData.message,
+                1024,
+                L"[%llu] [ThreadExit] [%lu] [%lu] [Status: %ws]\r\n",
+                timestamp.QuadPart,
+                HandleToULong(ProcessId),
+                HandleToULong(ThreadId),
+                L"Success"
+            );
+		}
 
         //wcscpy(msg.replyData.message, L"process");
 
@@ -407,57 +430,73 @@ CmRegistryCallback(
         return STATUS_SUCCESS;
     }
 
+    WCHAR regOperation[256] = { 0 };
     switch (regNotifyClass)
     {
     case RegNtPreSetValueKey:
         object = ((PREG_SET_VALUE_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegSetValueKey");
         break;
     case RegNtPostSetValueKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegSetValueKey");
         break;
     case RegNtPreDeleteValueKey:
         object = ((PREG_DELETE_VALUE_KEY_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegDeleteValueKey");
         break;
     case RegNtPostDeleteValueKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegDeleteValueKey");
         break;
     case RegNtPreDeleteKey:
         object = ((PREG_DELETE_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegDeleteKey");
         break;
     case RegNtPostDeleteKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegDeleteKey");
         break;
     case RegNtPostLoadKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegLoadKey");
         break;
     case RegNtPostUnLoadKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegUnLoadKey");
         break;
     case RegNtPreRenameKey:
         object = ((PREG_RENAME_KEY_INFORMATION)pParameters)->Object;
+		wcscat(regOperation, L"RegRenameKey");
         break;
     case RegNtPostRenameKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscat(regOperation, L"RegRenameKey");
         break;
     case RegNtPostQueryValueKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegQueryValueKey");
         break;
     case RegNtPostCreateKeyEx:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegCreateKeyEx");
         break;
     case RegNtPostOpenKeyEx:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegOpenKeyEx");
         break;
     case RegNtPreSaveKey:
         object = ((PREG_SAVE_KEY_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegSaveKey");
         break;
 
     case RegNtPostSaveKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
-
+        wcscpy(regOperation, L"RegSaveKey");
         break;
     case RegNtPreQueryValueKey:
         object = ((PREG_QUERY_VALUE_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegQueryValueKey");
         break;
     case RegNtPreCreateKey:
         // object = ((PREG_PRE_CREATE_KEY_INFORMATION)pParameters)->Object;
@@ -469,36 +508,47 @@ CmRegistryCallback(
         break;
     case RegNtPostCreateKey:
         object = ((PREG_POST_CREATE_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegCreateKey");
         break;
     case RegNtPreSetInformationKey:
         object = ((PREG_SET_INFORMATION_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegSetInformationKey");
         break;
     case RegNtPostSetInformationKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegSetInformationKey");
         break;
     case RegNtPreEnumerateKey:
         object = ((PREG_ENUMERATE_KEY_INFORMATION)pParameters)->Object;
+        wcscpy(regOperation, L"RegEnumerateKey");
         break;
     case RegNtPostEnumerateKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegEnumerateKey");
         break;
     case RegNtPreEnumerateValueKey:
         object = ((PREG_ENUMERATE_VALUE_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegEnumerateValueKey");
         break;
     case RegNtPostEnumerateValueKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegEnumerateValueKey");
         break;
     case RegNtPreQueryKey:
         object = ((PREG_QUERY_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegQueryKey");
         break;
     case RegNtPostQueryKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegQueryKey");
         break;
     case RegNtPreQueryMultipleValueKey:
         object = ((PREG_QUERY_MULTIPLE_VALUE_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegQueryMultipleValueKey");
         break;
     case RegNtPostQueryMultipleValueKey:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegQueryMultipleValueKey");
         break;
     case RegNtPreOpenKey:
         // object = ((PREG_PRE_OPEN_KEY_INFORMATION)pParameters)->Object;
@@ -510,38 +560,35 @@ CmRegistryCallback(
         break;
     case RegNtPostOpenKey:
         object = ((PREG_POST_OPEN_KEY_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegOpenKey");
         break;
-    case RegNtPreKeyHandleClose:
+   /* case RegNtPreKeyHandleClose:
         object = ((PREG_KEY_HANDLE_CLOSE_INFORMATION)pParameters)->Object;
+		wcscpy(regOperation, L"RegKeyHandleClose");
         break;
     case RegNtPostKeyHandleClose:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
-        break;
-    case RegNtPreFlushKey:
-        object = ((PREG_FLUSH_KEY_INFORMATION)pParameters)->Object;
-        break;
-    case RegNtPostFlushKey:
-        object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
-        break;
+        wcscpy(regOperation, L"RegKeyHandleClose");
+        break;*/
     case RegNtPreLoadKey:
         object = ((PREG_LOAD_KEY_INFORMATION)pParameters)->Object;
         break;
     case RegNtPreUnLoadKey:
         object = ((PREG_UNLOAD_KEY_INFORMATION)pParameters)->Object;
         break;
-    case RegNtPreQueryKeySecurity:
+  /*  case RegNtPreQueryKeySecurity:
         object = ((PREG_QUERY_KEY_SECURITY_INFORMATION)pParameters)->Object;
         break;
     case RegNtPostQueryKeySecurity:
         object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
-        break;
-    case RegNtPreSetKeySecurity:
-        object = ((PREG_SET_KEY_SECURITY_INFORMATION)pParameters)->Object;
-        break;
-    case RegNtPostSetKeySecurity:
-        object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
-        break;
-    case RegNtCallbackObjectContextCleanup:
+        break;*/
+    //case RegNtPreSetKeySecurity:
+    //    object = ((PREG_SET_KEY_SECURITY_INFORMATION)pParameters)->Object;
+    //    break;
+    //case RegNtPostSetKeySecurity:
+    //    object = ((PREG_POST_OPERATION_INFORMATION)pParameters)->Object;
+    //    break;
+   /* case RegNtCallbackObjectContextCleanup:
         object = ((PREG_CALLBACK_CONTEXT_CLEANUP_INFORMATION)pParameters)->Object;
         break;
     case RegNtPreRestoreKey:
@@ -549,13 +596,13 @@ CmRegistryCallback(
         break;
     case RegNtPostRestoreKey:
         object = ((PREG_RESTORE_KEY_INFORMATION)pParameters)->Object;
-        break;
-    case RegNtPreReplaceKey:
+        break;*/
+ /*   case RegNtPreReplaceKey:
         object = ((PREG_REPLACE_KEY_INFORMATION)pParameters)->Object;
         break;
     case RegNtPostReplaceKey:
         object = ((PREG_REPLACE_KEY_INFORMATION)pParameters)->Object;
-        break;
+        break;*/
     default:
         break;
     }
@@ -596,10 +643,15 @@ CmRegistryCallback(
 
             RtlZeroMemory(msg, sizeof(*msg));
 
+            UNICODE_STRING regOperationString;
+            RtlInitUnicodeString(&regOperationString, regOperation);
+
             RtlStringCchPrintfW(
                 msg->replyData.message,
                 1024,
-                L"[RegistryKey] Key=%wZ\r\n",
+                L"[%llu] [%wZ] Key=%wZ\r\n",
+				timestamp.QuadPart,
+                &regOperationString,
                 objectName
             );
 
@@ -660,10 +712,11 @@ ProcFltSendMessageProcessCreate(
     RtlStringCchPrintfW(
         msg->replyData.message,
         1024,
-        L"[%llu] [ProcessCreate] [%lu] Path=%wZ Cmd=%wZ\r\n",
+        L"[%llu] [ProcessCreate] [%lu] [Path=%wZ] [Status=%ws] [Cmd=%wZ]\r\n",
         timestamp.QuadPart,
         HandleToULong(ProcessId),
         CreateInfo->ImageFileName,
+        CreateInfo->CreationStatus == STATUS_SUCCESS ? L"Success\0" : L"Failure\0",
         CreateInfo->CommandLine
     );
 
@@ -701,6 +754,8 @@ ProcFltSendMessageProcessTerminate(
     KeQuerySystemTime(&timestamp);
 
     RtlZeroMemory(msg, sizeof(*msg));
+
+    //__debugbreak();
 
     RtlStringCchPrintfW(
         msg->replyData.message,
@@ -814,10 +869,10 @@ PLoadImageNotifyRoutine(
         RtlStringCchPrintfW(
             msg->replyData.message,
             1024,
-            L"[%llu] [ImageLoad] [%wZ]\r\n",
+            L"[%llu] [ImageLoad] [Path: %wZ] [Type: %wZ]\r\n",
             timestamp.QuadPart,
-            imageFileName
-            //HandleToULong(ProcessId)
+            &imageFileName,
+            ImageInfo->SystemModeImage ? L"System" : L"User"
         );
 
         //wcscpy(msg.replyData.message, L"process");
@@ -857,6 +912,82 @@ ImageFilterUninitialize()
     return PsRemoveLoadImageNotifyRoutine(ImageFltNotifyRoutine);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+* File operation callbacks
+*/
+
+CONST FLT_OPERATION_REGISTRATION callbacks[] = {
+    { IRP_MJ_CREATE, 0, PreCreate, NULL },
+
+    //{ IRP_MJ_CLOSE, 0, , NULL },
+
+    { IRP_MJ_OPERATION_END }
+};
+
+FLT_PREOP_CALLBACK_STATUS
+PreCreate(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Out_ PVOID* Buffer
+)
+{
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Buffer);
+
+    if (!gClientPort || !gFileMonitoringEnabled)
+    {
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    }
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+
+    if (NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
+    {
+        //__debugbreak();
+
+        FltParseFileNameInformation(nameInfo);
+
+        PMY_CUSTOM_MESSAGE msg = ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            sizeof(MY_CUSTOM_MESSAGE),
+            'gsmT'
+        );
+
+        if (!msg)
+        {
+			WikddLogError("Failed to allocate memory for message.");
+            return FLT_PREOP_COMPLETE;
+        }
+
+        LARGE_INTEGER timestamp;
+        KeQuerySystemTime(&timestamp);
+
+        RtlZeroMemory(msg, sizeof(*msg));
+
+        UNICODE_STRING fileName;
+        RtlInitUnicodeString(&fileName, nameInfo->Name.Buffer);
+
+        RtlStringCchPrintfW(
+            msg->replyData.message,
+            1024,
+            L"[%llu] [CreateFile] [%wZ]\r\n",
+            timestamp.QuadPart,
+            &fileName
+            //HandleToULong(ProcessId)
+        );
+
+        FltReleaseFileNameInformation(nameInfo);
+
+        //wcscpy(msg.replyData.message, L"process");
+
+        msg->replyData.messageLength = (ULONG)wcslen(msg->replyData.message) * sizeof(WCHAR);
+
+        TpEnqueueWorkItem(&gThreadPool->tp, SendWorker, msg);
+    }
+
+    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
@@ -901,10 +1032,14 @@ DisconnectNotifyCallback(
 wchar_t* FindNextToken(wchar_t* str, wchar_t delimiter)
 {
     while (*str && *str != delimiter)
+    {
         str++;
+    }
 
     if (*str == delimiter)
+    {
         *str++ = L'\0';
+    }
 
     return str;
 }
@@ -921,6 +1056,7 @@ HandleUserMessage(WCHAR* message, ULONG messageLength)
 	BOOLEAN imageMonitoringFlag = FALSE;
     BOOLEAN threadMonitoringFlag = FALSE;
 	BOOLEAN registryMonitoringFlag = FALSE;
+    BOOLEAN fileMonitoringEnabled = FALSE;
 
     WCHAR* current = message;
 
@@ -944,6 +1080,10 @@ HandleUserMessage(WCHAR* message, ULONG messageLength)
         {
             registryMonitoringFlag = TRUE;
         }
+        else if (wcsncmp(current, L"file", wcslen(L"file")) == 0)
+        {
+            fileMonitoringEnabled = TRUE;
+		}
 
         current = next;
     }
@@ -994,6 +1134,18 @@ HandleUserMessage(WCHAR* message, ULONG messageLength)
         else
         {
             gRegistryMonitoringEnabled = FALSE;
+        }
+    }
+
+    if (fileMonitoringEnabled)
+    {
+        if (gFileMonitoringEnabled == FALSE)
+        {
+            gFileMonitoringEnabled = TRUE;
+        }
+        else
+        {
+            gFileMonitoringEnabled = FALSE;
         }
     }
 }
@@ -1130,45 +1282,6 @@ CreateCommunicationPort()
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*
-* File operation callbacks
-*/
-
-CONST FLT_OPERATION_REGISTRATION callbacks[] = {
-    //{IRP_MJ_CREATE, 0, PreCreate, NULL},
-
-    { IRP_MJ_OPERATION_END }
-};
-
-FLT_PREOP_CALLBACK_STATUS 
-PreCreate(
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Out_ PVOID* Buffer
-)
-{
-    UNREFERENCED_PARAMETER(FltObjects);
-    UNREFERENCED_PARAMETER(Buffer);
-
-
-    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
-    MY_CUSTOM_MESSAGE msg = { 0 };
-
-    if (gClientPort && NT_SUCCESS(FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED, &nameInfo)))
-    {
-        //__debugbreak();
-
-        wcscpy_s(msg.replyData.message, 1024, nameInfo->Name.Buffer);
-        msg.replyData.messageLength = nameInfo->Name.Length;
-
-        FltSendMessage(gFilterRegistration, &gClientPort, &msg.replyData, sizeof(REPLY_DATA), NULL, NULL, NULL);
-        FltReleaseFileNameInformation(nameInfo);
-    }
-
-    return FLT_PREOP_SUCCESS_NO_CALLBACK;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/*
 * Driver entry and unload
 */
 
@@ -1246,9 +1359,10 @@ DriverEntry(
     gAltitude = altitude;
 
 	UNICODE_STRING ustrFunctioName = RTL_CONSTANT_STRING(L"ZwQueryInformationProcess");
-	pfnZwQueryInformationProcess = (PFUNC_ZwQueryInformationProcess)MmGetSystemRoutineAddress(&ustrFunctioName);
+	pfnZwQueryInformationProcess = (PFUNC_ZwQueryInformationProcess)(SIZE_T)MmGetSystemRoutineAddress(&ustrFunctioName);
     if (!pfnZwQueryInformationProcess)
     {
+        __debugbreak();
         WikddLogError("Failed to get address of ZwQueryInformationProcess");
         return STATUS_UNSUCCESSFUL;
 	}

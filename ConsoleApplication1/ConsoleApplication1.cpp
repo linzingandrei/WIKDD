@@ -906,6 +906,11 @@ DWORD WINAPI GetWorker(PVOID ctx)
 {
     HANDLE port = (HANDLE)ctx;
 
+    if (!port)
+    {
+        return STATUS_UNSUCCESSFUL;
+    }
+
     while (true)
     {
         MY_CUSTOM_MESSAGE msg = { 0 };
@@ -919,9 +924,9 @@ DWORD WINAPI GetWorker(PVOID ctx)
 
         if (!SUCCEEDED(hr))
         {
-			AcquireSRWLockExclusive(&fLock);
+			/*AcquireSRWLockExclusive(&fLock);
             WriteFile(hFile, "Something went wrong\n", sizeof("Something went wrong\n") - 1, NULL, NULL);
-			ReleaseSRWLockExclusive(&fLock);
+			ReleaseSRWLockExclusive(&fLock);*/
 
             break;
         }
@@ -967,7 +972,7 @@ int main() {
 
 
     InitializeSRWLock(&fLock);
-    hFile = CreateFileA("output.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    hFile = CreateFileA("output.log", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
     //__debugbreak();
 
