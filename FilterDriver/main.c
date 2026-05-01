@@ -758,8 +758,8 @@ CmRegistryCallback(
 
             ULONG bufferLength = 1024;
             kvInfo = ExAllocatePool2(
-                POOL_FLAG_NON_PAGED, 
-                bufferLength, 
+                POOL_FLAG_NON_PAGED,
+                bufferLength,
                 'keyV'
             );
             if (!kvInfo)
@@ -775,12 +775,13 @@ CmRegistryCallback(
                 bufferLength,
                 &bufferLength
             );*/
-           /* if (!NT_SUCCESS(status))
-            {
-                return STATUS_UNSUCCESSFUL;
-            }*/
-           
-            if (regNotifyClass == RegNtPreSetValueKey || regNotifyClass == RegNtPostSetValueKey)
+            /* if (!NT_SUCCESS(status))
+             {
+                 return STATUS_UNSUCCESSFUL;
+             }*/
+
+            if (regNotifyClass == RegNtPreSetValueKey || regNotifyClass == RegNtPostSetValueKey ||
+                regNotifyClass == RegNtPreDeleteValueKey)
             {
                 //__debugbreak();
 
@@ -1032,10 +1033,10 @@ PLoadImageNotifyRoutine(
         RtlStringCchPrintfW(
             msg->replyData.message,
             1024,
-            L"[%llu] [ImageLoad] [Path: %wZ] [Type: %wZ]\r\n",
+            L"[%llu] [ImageLoad] [Path: %wZ] [Type: %ws]\r\n",
             timestamp.QuadPart,
             &imageFileName,
-            ImageInfo->SystemModeImage ? L"System" : L"User"
+            ImageInfo->SystemModeImage == 1 ? L"System\0" : L"User\0"
         );
 
         //wcscpy(msg.replyData.message, L"process");
@@ -2509,6 +2510,8 @@ DriverEntry(
         WikddLogApiFailedNt(status, "PsSetCreateProcessNotifyRoutineEx");
         ProcessFilterUninitialize();
         FltUnregisterFilter(gFilterRegistration);
+        TpUninit(&gThreadPool->tp);
+        ExFreePoolWithTag(gThreadPool, 'ptmT');
         WPP_CLEANUP(gDriverObject);
         return status;
 	}
@@ -2518,6 +2521,8 @@ DriverEntry(
         DbgPrintEx(0, 0, "Failed to create load image notify routine (0x%08X)\n", status);
         ImageFilterUninitialize();
 		FltUnregisterFilter(gFilterRegistration);
+        TpUninit(&gThreadPool->tp);
+        ExFreePoolWithTag(gThreadPool, 'ptmT');
         return status;
     }
 
@@ -2525,12 +2530,16 @@ DriverEntry(
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(0, 0, "Failed to create thread notify routine (0x%08X)\n", status);
         ThreadFilterUninitialize();
+        TpUninit(&gThreadPool->tp);
+        ExFreePoolWithTag(gThreadPool, 'ptmT');
     }
 
     status = RegistryFilterInitialize();
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(0, 0, "Failed to create registry callback (0x%08X)\n", status);
         RegistryFilterUninitialize();
+        TpUninit(&gThreadPool->tp);
+        ExFreePoolWithTag(gThreadPool, 'ptmT');
 	}
 
     return FltStartFiltering(gFilterRegistration);

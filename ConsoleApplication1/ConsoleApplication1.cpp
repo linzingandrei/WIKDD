@@ -874,17 +874,25 @@ typedef struct _REPLY_DATA
 {
     WCHAR message[1024];
     ULONG messageLength;
-} REPLY_DATA, * PREPLY_DATA;
+} REPLY_DATA, *PREPLY_DATA;
 
 typedef struct _MY_CUSTOM_MESSAGE
 {
     FILTER_MESSAGE_HEADER headers;
     REPLY_DATA replyData;
 
-} MY_CUSTOM_MESSAGE, * PMY_CUSTOM_MESSAGE;
+} MY_CUSTOM_MESSAGE, *PMY_CUSTOM_MESSAGE;
 
 SRWLOCK fLock;
 HANDLE hFile;
+
+typedef struct _WORKER_CONTEXT
+{
+    HANDLE port;
+    HANDLE hFile;
+} WORKER_CONTEXT, *PWORKER_CONTEXT;
+
+MY_THREAD_POOL tp = { 0 };
 
 NTSTATUS
 SendCustomMessageToDriver(HANDLE port, const WCHAR* message)
@@ -911,7 +919,7 @@ DWORD WINAPI GetWorker(PVOID ctx)
         return STATUS_UNSUCCESSFUL;
     }
 
-    while (true)
+    while (TRUE)
     {
         MY_CUSTOM_MESSAGE msg = { 0 };
 
@@ -924,19 +932,32 @@ DWORD WINAPI GetWorker(PVOID ctx)
 
         if (!SUCCEEDED(hr))
         {
-			/*AcquireSRWLockExclusive(&fLock);
+            /*AcquireSRWLockExclusive(&fLock);
             WriteFile(hFile, "Something went wrong\n", sizeof("Something went wrong\n") - 1, NULL, NULL);
-			ReleaseSRWLockExclusive(&fLock);*/
+            ReleaseSRWLockExclusive(&fLock);*/
 
-            break;
+            return STATUS_UNSUCCESSFUL;
         }
-         
-		AcquireSRWLockExclusive(&fLock);
-		WriteFile(hFile, msg.replyData.message, msg.replyData.messageLength, NULL, NULL);
-		ReleaseSRWLockExclusive(&fLock);
+
+        AcquireSRWLockExclusive(&fLock);
+
+        HANDLE hLog = CreateFileA("output.log", GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        SetFilePointer(hLog, 0, NULL, FILE_END);
+
+        DWORD bytesWritten = 0;
+        BOOL res = WriteFile(hLog, msg.replyData.message, msg.replyData.messageLength, &bytesWritten, NULL);
+        if (!res || bytesWritten != msg.replyData.messageLength) {
+            printf("WriteFile failed: %d\n", GetLastError());
+        }
+
+        CloseHandle(hLog);
+
+        ReleaseSRWLockExclusive(&fLock);
+
+        //TpEnqueueWorkItem(&tp, GetWorker, port);
     }
 
-    return 0;
+    return STATUS_SUCCESS;
 }
 
 DWORD WINAPI CommunicationWithDriver(PVOID ctx)
@@ -972,7 +993,9 @@ int main() {
 
 
     InitializeSRWLock(&fLock);
-    hFile = CreateFileA("output.log", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    
+    /*hFile = CreateFileA("output.log", GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    CloseHandle(hFile);*/
 
     //__debugbreak();
 
@@ -983,16 +1006,17 @@ int main() {
 
 	CreateThread(NULL, 0, CommunicationWithDriver, port, 0, NULL);
 
+
 	//SendCustomMessageToDriver(port, userInput);
 
 	//printf("Image sent to driver\n");
 
-	MY_THREAD_POOL tp = { 0 };
 	//MY_CONTEXT ctx = { 0 };
 
     NTSTATUS status = TpInit(&tp, 5);
     if (!NT_SUCCESS(status))
     {
+        return 1;
     }
     
     //InitializeSRWLock(&ctx.ContextLock);
@@ -1005,8 +1029,11 @@ int main() {
         TpEnqueueWorkItem(&tp, GetWorker, port);
     }
 
-    WaitForMultipleObjects(tp.NumberOfThreads, tp.ThreadHandles, TRUE, INFINITE);
+	WaitForMultipleObjects(tp.NumberOfThreads, tp.ThreadHandles, TRUE, INFINITE);
 
+	TpUninit(&tp);
+
+    //CloseHandle(hFile);
     CloseHandle(port);
     return 0;
 }
